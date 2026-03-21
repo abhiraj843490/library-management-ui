@@ -160,7 +160,19 @@
 .transactions-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 0.9rem;
+}
+
+.transactions-table thead tr,
+.transactions-table tbody tr.loan-row {
+  display: table-row;
+}
+
+.transactions-table th,
+.transactions-table td {
+  display: table-cell;
+  vertical-align: middle;
 }
 
 .transactions-table thead {
@@ -173,11 +185,51 @@
   text-align: left;
   font-weight: 600;
   color: var(--text);
+  white-space: nowrap;
 }
 
 .transactions-table td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.transactions-table th:nth-child(1),
+.transactions-table td:nth-child(1) {
+  width: 12%;
+}
+
+.transactions-table th:nth-child(2),
+.transactions-table td:nth-child(2) {
+  width: 19%;
+}
+
+.transactions-table th:nth-child(3),
+.transactions-table td:nth-child(3) {
+  width: 17%;
+}
+
+.transactions-table th:nth-child(4),
+.transactions-table td:nth-child(4),
+.transactions-table th:nth-child(5),
+.transactions-table td:nth-child(5) {
+  width: 11%;
+  white-space: nowrap;
+}
+
+.transactions-table th:nth-child(6),
+.transactions-table td:nth-child(6) {
+  width: 14%;
+}
+
+.transactions-table th:nth-child(7),
+.transactions-table td:nth-child(7) {
+  width: 16%;
+}
+
+.transactions-table td:nth-child(7) .secondary-button {
+  white-space: nowrap;
 }
 
 .transactions-table tbody tr:hover {
@@ -217,6 +269,7 @@
 
 @media (max-width: 1024px) {
   .transactions-table {
+    table-layout: auto;
     font-size: 0.85rem;
   }
 
