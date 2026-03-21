@@ -1,0 +1,176 @@
+.fines-container {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 56px;
+}
+
+.fines-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  color: var(--text);
+}
+
+.stat-value.danger {
+  color: var(--danger);
+}
+
+.stat-value.positive {
+  color: var(--positive);
+}
+
+.stat-caption {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fines-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: inherit;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fines-list {
+  display: grid;
+  gap: 16px;
+}
+
+.fine-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fine-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.fine-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.fine-id {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fine-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.fine-details p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.fine-details strong {
+  color: var(--text);
+}
+
+.fine-card .primary-button,
+.fine-card .secondary-button {
+  align-self: flex-start;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.fine-card .primary-button {
+  background: var(--accent);
+  color: white;
+}
+
+.fine-card .primary-button:hover {
+  background: var(--accent-dark);
+}
+
+.fine-paid-note {
+  padding: 12px;
+  background: rgba(47, 109, 79, 0.1);
+  border: 1px solid var(--positive);
+  border-radius: 6px;
+  color: var(--positive);
+  font-weight: 500;
+}
+
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (max-width: 768px) {
+  .fines-stats {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .fines-controls {
+    flex-direction: column;
+  }
+
+  .filter-select {
+    width: 100%;
+  }
+}

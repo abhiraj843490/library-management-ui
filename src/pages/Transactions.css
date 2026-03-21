@@ -1,0 +1,241 @@
+.transactions-container {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 56px;
+}
+
+.transactions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.issue-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.issue-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issue-form label span {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.issue-form select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: inherit;
+  background: var(--surface-strong);
+  cursor: pointer;
+}
+
+.issue-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(176, 90, 43, 0.1);
+}
+
+.issue-form .primary-button {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.issue-form .primary-button:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+.issue-form .primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.insight-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.insight-card span {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.insight-card strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 6px;
+}
+
+.insight-card small {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.stat-item {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  text-align: center;
+}
+
+.stat-item span {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.stat-item strong {
+  display: block;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+.text-danger {
+  color: var(--danger) !important;
+}
+
+.text-muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.transactions-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.transactions-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.transactions-table thead {
+  background: var(--surface-strong);
+  border-bottom: 2px solid var(--line);
+}
+
+.transactions-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.transactions-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.transactions-table tbody tr:hover {
+  background: var(--surface-strong);
+}
+
+.transactions-table tbody tr.overdue {
+  background: rgba(173, 61, 61, 0.05);
+}
+
+.transactions-table tbody tr.dueSoon {
+  background: rgba(168, 108, 8, 0.05);
+}
+
+.transactions-table .secondary-button {
+  padding: 6px 12px;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.transactions-table .secondary-button:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (max-width: 1024px) {
+  .transactions-table {
+    font-size: 0.85rem;
+  }
+
+  .transactions-table th,
+  .transactions-table td {
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .transactions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transactions-controls {
+    flex-direction: column;
+  }
+
+  .filter-select {
+    width: 100%;
+  }
+}

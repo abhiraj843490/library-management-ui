@@ -1,0 +1,153 @@
+.dashboard-container {
+  width: min(1200px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 56px;
+}
+
+.dashboard-hero {
+  margin-bottom: 32px;
+}
+
+.dashboard-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  line-height: 0.95;
+  margin: 0 0 10px;
+}
+
+.dashboard-hero .hero-copy {
+  max-width: 56ch;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.stat-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-card.stat-primary {
+  border-left: 4px solid var(--accent);
+}
+
+.stat-card.stat-positive {
+  border-left: 4px solid var(--positive);
+}
+
+.stat-card.stat-warning {
+  border-left: 4px solid var(--warning);
+}
+
+.stat-card.stat-danger {
+  border-left: 4px solid var(--danger);
+}
+
+.stat-card.stat-neutral {
+  border-left: 4px solid var(--muted);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  color: var(--text);
+}
+
+.stat-caption {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.recent-loans {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.loan-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.loan-info {
+  flex: 1;
+}
+
+.loan-info strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.loan-info p {
+  margin: 2px 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.loan-info small {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.loan-status {
+  margin-left: 12px;
+}
+
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.quick-stat {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  text-align: center;
+}
+
+.quick-stat span {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.quick-stat strong {
+  display: block;
+  font-size: 1.6rem;
+  color: var(--text);
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
