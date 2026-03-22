@@ -1,96 +1,114 @@
 import { useMemo } from 'react';
 import { useLibrary } from '../App';
+import { useAuth } from '../contexts/AuthContext';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { books, members, loans, fines } = useLibrary();
+  const { members } = useLibrary();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
+  // Define helper functions first
+  const memberStatus = (status) => {
+    if (status === 'Active') return 'Active ✓';
+    if (status === 'Review') return 'Pending ⏳';
+    return 'Inactive';
+  };
+
+  const getMemberStatus = (status) => {
+    switch(status) {
+      case 'Active': return 'active';
+      case 'Review': return 'warning';
+      default: return 'neutral';
+    }
+  };
 
   const stats = useMemo(() => {
-    const today = new Date();
-    const overdueLoans = loans.filter(l => {
-      if (l.returnedOn) return false;
-      return new Date(l.dueOn) < today;
-    });
+    if (isAdmin) {
+      const activeMembers = members.filter(m => m.status === 'Active').length;
+      const reviewMembers = members.filter(m => m.status === 'Review').length;
+      const totalMembers = members.length;
 
-    const duesSoonLoans = loans.filter(l => {
-      if (l.returnedOn) return false;
-      const dueDate = new Date(l.dueOn);
-      const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-      return daysUntilDue <= 3 && daysUntilDue > 0;
-    });
+      return [
+        {
+          label: 'Active Students',
+          value: activeMembers,
+          caption: 'Currently enrolled',
+          color: 'positive',
+        },
+        {
+          label: 'Total Students',
+          value: totalMembers,
+          caption: 'All registrations',
+          color: 'primary',
+        },
+        {
+          label: 'Under Review',
+          value: reviewMembers,
+          caption: 'Awaiting approval',
+          color: 'warning',
+        },
+        {
+          label: 'Total Seats',
+          value: 100,
+          caption: '50 Boys + 50 Girls',
+          color: 'neutral',
+        },
+      ];
+    } else {
+      // Student view
+      const studentData = members.find(m => m.id === user?.id) || user;
+      return [
+        {
+          label: 'Your Seating Side',
+          value: studentData?.side || 'BOYS',
+          caption: 'Allocated side',
+          color: 'primary',
+        },
+        {
+          label: 'Seat Number',
+          value: studentData?.seatNumber || 'B-00',
+          caption: 'Your seat',
+          color: 'positive',
+        },
+        {
+          label: 'Status',
+          value: memberStatus(studentData?.status || 'Active'),
+          caption: 'Current status',
+          color: 'neutral',
+        },
+        {
+          label: 'Subscription',
+          value: '₹500',
+          caption: 'Monthly fee',
+          color: 'neutral',
+        },
+      ];
+    }
+  }, [members, isAdmin, user]);
 
-    const totalBooks = books.reduce((sum, b) => sum + b.totalCopies, 0);
-    const availableBooks = books.reduce((sum, b) => sum + b.availableCopies, 0);
-    const activeMembers = members.filter(m => m.status === 'Active').length;
-    const unpaidFines = fines.filter(f => f.status === 'Unpaid').length;
-    const totalFines = fines.filter(f => f.status === 'Unpaid').reduce((sum, f) => sum + f.amount, 0);
-
-    return [
-      {
-        label: 'Total Books',
-        value: totalBooks,
-        caption: `${books.length} titles`,
-        color: 'primary',
-      },
-      {
-        label: 'Available Copies',
-        value: availableBooks,
-        caption: 'Ready to issue',
-        color: 'positive',
-      },
-      {
-        label: 'Active Members',
-        value: activeMembers,
-        caption: `of ${members.length} total`,
-        color: 'neutral',
-      },
-      {
-        label: 'Overdue Loans',
-        value: overdueLoans.length,
-        caption: 'Need follow-up',
-        color: 'danger',
-      },
-      {
-        label: 'Due Soon (3 Days)',
-        value: duesSoonLoans.length,
-        caption: 'Reminders needed',
-        color: 'warning',
-      },
-      {
-        label: 'Unpaid Fines',
-        value: `₹${totalFines}`,
-        caption: `${unpaidFines} pending`,
-        color: 'danger',
-      },
-    ];
-  }, [books, members, loans, fines]);
-
-  const recentLoans = loans
-    .filter(l => !l.returnedOn)
-    .sort((a, b) => new Date(b.issuedOn) - new Date(a.issuedOn))
-    .slice(0, 5);
-
-  const getBookTitle = (bookId) => {
-    return books.find(b => b.id === bookId)?.title || 'Unknown Book';
-  };
-
-  const getMemberName = (memberId) => {
-    return members.find(m => m.id === memberId)?.name || 'Unknown Member';
-  };
+  const activeMembersList = isAdmin
+    ? members
+        .filter(m => m.status === 'Active')
+        .sort((a, b) => new Date(b.membershipDate) - new Date(a.membershipDate))
+        .slice(0, 5)
+    : members.filter(m => m.id === user?.id).slice(0, 1);
 
   return (
     <div className="dashboard-container">
       <section className="dashboard-hero">
         <div>
-          <p className="eyebrow">Library Operations</p>
-          <h1>Dashboard</h1>
+          <p className="eyebrow">System Overview</p>
+          <h1>{isAdmin ? 'Admin Dashboard' : 'My Dashboard'}</h1>
           <p className="hero-copy">
-            Overview of library operations, book inventory, and member activity.
+            {isAdmin
+              ? 'Manage student enrollments, seat allocations, and system analytics.'
+              : 'View your seat information and booking details.'}
           </p>
         </div>
       </section>
 
-      <section className="stats-grid" aria-label="Library summary">
+      <section className="stats-grid" aria-label="Study space summary">
         {stats.map((stat) => (
           <article key={stat.label} className={`stat-card stat-${stat.color}`}>
             <span className="stat-label">{stat.label}</span>
@@ -104,40 +122,29 @@ export default function Dashboard() {
         <article className="panel">
           <div className="panel-head compact">
             <div>
-              <p className="panel-label">Recent Activity</p>
-              <h2>Active Loans</h2>
+              <p className="panel-label">Recently</p>
+              <h2>{isAdmin ? 'Active Students' : 'My Information'}</h2>
             </div>
           </div>
 
           <div className="recent-loans">
-            {recentLoans.length > 0 ? (
-              recentLoans.map((loan) => {
-                const dueDate = new Date(loan.dueOn);
-                const today = new Date();
-                const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-                const isOverdue = daysUntilDue < 0;
-
-                return (
-                  <div key={loan.id} className="loan-item">
-                    <div className="loan-info">
-                      <strong>{getBookTitle(loan.bookId)}</strong>
-                      <p>{getMemberName(loan.memberId)}</p>
-                      <small>{loan.id}</small>
-                    </div>
-                    <div className="loan-status">
-                      {isOverdue ? (
-                        <span className={`badge danger`}>Overdue by {Math.abs(daysUntilDue)} days</span>
-                      ) : daysUntilDue <= 3 ? (
-                        <span className={`badge warning`}>Due in {daysUntilDue} days</span>
-                      ) : (
-                        <span className={`badge neutral`}>Due on {loan.dueOn}</span>
-                      )}
-                    </div>
+            {activeMembersList.length > 0 ? (
+              activeMembersList.map((member) => (
+                <div key={member.id} className="loan-item">
+                  <div className="loan-info">
+                    <strong>{member.name}</strong>
+                    <p>{member.email}</p>
+                    <small>{member.id}</small>
                   </div>
-                );
-              })
+                  <div className="loan-status">
+                    <span className={`badge ${getMemberStatus(member.status)}`}>
+                      {member.status}
+                    </span>
+                  </div>
+                </div>
+              ))
             ) : (
-              <div className="empty-state">No active loans</div>
+              <div className="empty-state">No members found</div>
             )}
           </div>
         </article>
@@ -151,22 +158,45 @@ export default function Dashboard() {
           </div>
 
           <div className="quick-stats">
-            <div className="quick-stat">
-              <span>Books in Circulation</span>
-              <strong>{books.reduce((sum, b) => sum + b.totalCopies - b.availableCopies, 0)}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Total Members</span>
-              <strong>{members.length}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Total Transactions</span>
-              <strong>{loans.length}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Completed Loans</span>
-              <strong>{loans.filter(l => l.returnedOn).length}</strong>
-            </div>
+            {isAdmin ? (
+              <>
+                <div className="quick-stat">
+                  <span>Total Students</span>
+                  <strong>{members.length}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Active Students</span>
+                  <strong>{members.filter(m => m.status === 'Active').length}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Total Seats</span>
+                  <strong>100</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Pending Review</span>
+                  <strong>{members.filter(m => m.status === 'Review').length}</strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="quick-stat">
+                  <span>Your Seat</span>
+                  <strong>{user?.seatNumber || 'B-00'}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Monthly Fee</span>
+                  <strong>₹8,500</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Status</span>
+                  <strong>{user?.status || 'Active'}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Enrollment</span>
+                  <strong>{user?.enrollment || '2026-01-10'}</strong>
+                </div>
+              </>
+            )}
           </div>
         </article>
       </section>
