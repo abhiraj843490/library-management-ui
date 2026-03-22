@@ -10,8 +10,8 @@ export const AuthProvider = ({ children }) => {
   const mockUsers = [
     {
       id: 'ADM-001',
-      name: 'Admin User',
-      email: 'admin@studyspace.com',
+      name: 'Akash V',
+      email: 'akash@gmail.com',
       password: 'admin123',
       role: 'ADMIN',
       department: 'Management',

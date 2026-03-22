@@ -98,11 +98,11 @@ export default function Dashboard() {
     <div className="dashboard-container">
       <section className="dashboard-hero">
         <div>
-          <p className="eyebrow">System Overview</p>
-          <h1>{isAdmin ? 'Admin Dashboard' : 'My Dashboard'}</h1>
+          {/* <p className="eyebrow">System Overview</p> */}
+          <h1>{`Hi, ${user.name}`}</h1>
           <p className="hero-copy">
             {isAdmin
-              ? 'Manage student enrollments, seat allocations, and system analytics.'
+              ? 'Welcome back! Here’s a quick overview of the library’s current status and recent member activity.'
               : 'View your seat information and booking details.'}
           </p>
         </div>

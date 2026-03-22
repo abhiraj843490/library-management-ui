@@ -34,7 +34,7 @@ export default function Login() {
   };
 
   const handleDemoAdmin = () => {
-    setEmail('admin@studyspace.com');
+    setEmail('akash@gmail.com');
     setPassword('admin123');
   };
 
@@ -54,7 +54,7 @@ export default function Login() {
         <div className="login-card">
           <div className="login-header">
             <span className="nav-icon">📚</span>
-            <h1>Genius Tech Library System</h1>
+            <h1>Genius Tech Library</h1>
             <p>Login to your account</p>
           </div>
 
@@ -111,7 +111,7 @@ export default function Login() {
                 disabled={loading}
               >
                 👨‍💼 Admin
-                <small>admin@studyspace.com</small>
+                <small>akash@gmail.com</small>
               </button>
               <button
                 type="button"
@@ -140,7 +140,7 @@ export default function Login() {
               <li>
                 <strong>Admin Account:</strong>
                 <br />
-                Email: admin@studyspace.com
+                Email: akash@gmail.com
                 <br />
                 Password: admin123
               </li>

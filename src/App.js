@@ -11,6 +11,7 @@ import StudySpaces from './pages/StudySpaces';
 import MyBookings from './pages/MyBookings';
 import StudySpaceReports from './pages/StudySpaceReports';
 import Students from './pages/Students';
+import ViewSeats from './pages/ViewSeats';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -159,6 +160,14 @@ function AppContent() {
             element={
               <ProtectedRoute requiredRole="STUDENT">
                 <MyBookings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/view-seats"
+            element={
+              <ProtectedRoute requiredRole="STUDENT">
+                <ViewSeats />
               </ProtectedRoute>
             }
           />

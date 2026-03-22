@@ -1,6 +1,6 @@
-# Genius Tech Library System - API Reference & Data Structure
+# Genius Tech Library - API Reference & Data Structure
 
-This document describes the data structure and API endpoints for the Genius Tech Library System.
+This document describes the data structure and API endpoints for the Genius Tech Library.
 
 ---
 

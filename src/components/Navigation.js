@@ -25,7 +25,7 @@ export default function Navigation() {
       <div className="nav-container">
         <Link to="/dashboard" className="nav-brand">
           <span className="nav-icon">📚</span>
-          Genius Tech Library System
+          Genius Tech Library
         </Link>
 
         <ul className="nav-menu">
@@ -58,6 +58,11 @@ export default function Navigation() {
               <li>
                 <Link to="/my-bookings" className={`nav-link ${isActive('/my-bookings')}`}>
                   My Bookings
+                </Link>
+              </li>
+              <li>
+                <Link to="/view-seats" className={`nav-link ${isActive('/view-seats')}`}>
+                  View Seats
                 </Link>
               </li>
               <li>

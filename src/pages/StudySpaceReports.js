@@ -93,10 +93,10 @@ const StudySpaceReports = () => {
 
   return (
     <div className="study-space-reports-container">
-      <div className="page-header">
-        <h1>📊 Study Space Analytics & Reports</h1>
+      {/* <div className="page-header">
+        <h1>📊 Analytics & Reports</h1>
         <p>Monitor usage, occupancy, and feedback across all study facilities</p>
-      </div>
+      </div> */}
 
       {/* Overall Statistics */}
       <div className="stats-section">
