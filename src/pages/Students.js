@@ -6,9 +6,7 @@ import {
   toApiStudentCreatePayload,
   toApiStudentUpdatePayload,
 } from '../interfaces/studentResponse';
-
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
-const STUDENTS_ENDPOINT = `${API_BASE_URL}/api/students`;
+import { createStudentApi, getStudentsApi, updateStudentApi } from '../services/studentApi';
 
 const Students = () => {
   const [activeTab, setActiveTab] = useState('manage');
@@ -30,20 +28,7 @@ const Students = () => {
     setLoadError('');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(STUDENTS_ENDPOINT, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch students (${response.status})`);
-      }
-
-      const result = await response.json();
+      const result = await getStudentsApi();
       const studentsData = extractStudentsFromResponse(result);
       setStudents(studentsData.map(normalizeStudent));
     } catch (error) {
@@ -95,23 +80,9 @@ const Students = () => {
 
     setUpdatingStudentId(apiId);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${STUDENTS_ENDPOINT}/${apiId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(toApiStudentUpdatePayload(student, updates)),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Update failed (${response.status})`);
-      }
-
       let updatedFromApi = null;
       try {
-        const result = await response.json();
+        const result = await updateStudentApi(apiId, toApiStudentUpdatePayload(student, updates));
         if (result?.data && !Array.isArray(result.data)) {
           updatedFromApi = normalizeStudent(result.data);
         } else if (result && !Array.isArray(result)) {
@@ -156,19 +127,7 @@ const Students = () => {
 
     setIsEnrolling(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(STUDENTS_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(toApiStudentCreatePayload(formData, availableSeat.seat)),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Enrollment failed (${response.status})`);
-      }
+      await createStudentApi(toApiStudentCreatePayload(formData, availableSeat.seat));
 
       await fetchStudents();
       setFormData({ name: '', email: '', phone: '', gender: 'BOYS', seatSection: 'Regular' });
