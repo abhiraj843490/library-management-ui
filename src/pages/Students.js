@@ -1,5 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import '../styles/Students.css';
+import {
+  extractStudentsFromResponse,
+  normalizeStudent,
+  toApiStudentCreatePayload,
+  toApiStudentUpdatePayload,
+} from '../interfaces/studentResponse';
+
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
+const STUDENTS_ENDPOINT = `${API_BASE_URL}/api/students`;
 
 const Students = () => {
   const [activeTab, setActiveTab] = useState('manage');
@@ -10,56 +19,44 @@ const Students = () => {
     gender: 'BOYS',
     seatSection: 'Regular',
   });
-  const [students, setStudents] = useState([
-    {
-      id: 'STU-001',
-      name: 'Aarav Kumar',
-      email: 'aarav.kumar@email.com',
-      phone: '9876543210',
-      gender: 'BOYS',
-      seatSection: 'Regular',
-      seatNumber: 'B-15',
-      enrollmentDate: '2026-01-10',
-      subscriptionStatus: 'Active',
-      subscriptionExpiry: '2026-04-10',
-      monthlyFee: 8500,
-      feeStatus: 'Paid',
-      currentCheckIn: '2026-03-22 09:15',
-      currentCheckOut: '2026-03-22 11:45',
-    },
-    {
-      id: 'STU-002',
-      name: 'Priya Sharma',
-      email: 'priya.sharma@email.com',
-      phone: '9876543211',
-      gender: 'GIRLS',
-      seatSection: 'Silent',
-      seatNumber: 'G-08',
-      enrollmentDate: '2026-01-20',
-      subscriptionStatus: 'Active',
-      subscriptionExpiry: '2026-04-20',
-      monthlyFee: 8500,
-      feeStatus: 'Pending',
-      currentCheckIn: '2026-03-22 14:30',
-      currentCheckOut: null,
-    },
-    {
-      id: 'STU-003',
-      name: 'Rahul Verma',
-      email: 'rahul.verma@email.com',
-      phone: '9876543212',
-      gender: 'BOYS',
-      seatSection: 'Silent',
-      seatNumber: 'B-05',
-      enrollmentDate: '2026-02-05',
-      subscriptionStatus: 'Active',
-      subscriptionExpiry: '2026-05-05',
-      monthlyFee: 8500,
-      feeStatus: 'Paid',
-      currentCheckIn: null,
-      currentCheckOut: null,
-    },
-  ]);
+  const [students, setStudents] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [updatingStudentId, setUpdatingStudentId] = useState(null);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+
+  const fetchStudents = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError('');
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(STUDENTS_ENDPOINT, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch students (${response.status})`);
+      }
+
+      const result = await response.json();
+      const studentsData = extractStudentsFromResponse(result);
+      setStudents(studentsData.map(normalizeStudent));
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load students');
+      setStudents([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStudents();
+  }, [fetchStudents]);
 
   const availableSeats = useMemo(() => {
     const seats = {
@@ -89,10 +86,63 @@ const Students = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleEnrollStudent = (e) => {
+  const updateStudentStatus = async (student, updates, successMessage) => {
+    const apiId = student.studentId ?? student.id;
+    if (!apiId) {
+      console.log('Student id not found for update');
+      return;
+    }
+
+    setUpdatingStudentId(apiId);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${STUDENTS_ENDPOINT}/${apiId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(toApiStudentUpdatePayload(student, updates)),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Update failed (${response.status})`);
+      }
+
+      let updatedFromApi = null;
+      try {
+        const result = await response.json();
+        if (result?.data && !Array.isArray(result.data)) {
+          updatedFromApi = normalizeStudent(result.data);
+        } else if (result && !Array.isArray(result)) {
+          updatedFromApi = normalizeStudent(result);
+        }
+      } catch (_) {
+        updatedFromApi = null;
+      }
+
+      setStudents(prev =>
+        prev.map(s => {
+          const currentId = s.studentId ?? s.id;
+          if (String(currentId) !== String(apiId)) return s;
+          return updatedFromApi ? { ...s, ...updatedFromApi } : { ...s, ...updates };
+        })
+      );
+
+      if (successMessage) {
+        console.log(successMessage);
+      }
+    } catch (error) {
+      console.log(error.message || 'Unable to update student');
+    } finally {
+      setUpdatingStudentId(null);
+    }
+  };
+
+  const handleEnrollStudent = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.email || !formData.phone) {
-      alert('Please fill all required fields');
+      console.log('Please fill all required fields');
       return;
     }
 
@@ -100,53 +150,62 @@ const Students = () => {
       .find(s => s.available);
 
     if (!availableSeat) {
-      alert(`No available seats in ${formData.gender} - ${formData.seatSection} section`);
+      console.log(`No available seats in ${formData.gender} - ${formData.seatSection} section`);
       return;
     }
 
-    const newStudent = {
-      id: `STU-${(students.length + 1).toString().padStart(3, '0')}`,
-      ...formData,
-      seatNumber: availableSeat.seat,
-      enrollmentDate: new Date().toISOString().split('T')[0],
-      subscriptionStatus: 'Active',
-      subscriptionExpiry: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      monthlyFee: 8500,
-      feeStatus: 'Paid',
-      currentCheckIn: null,
-      currentCheckOut: null,
-    };
+    setIsEnrolling(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(STUDENTS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(toApiStudentCreatePayload(formData, availableSeat.seat)),
+      });
 
-    setStudents([...students, newStudent]);
-    setFormData({ name: '', email: '', phone: '', gender: 'BOYS', seatSection: 'Regular' });
-    alert(`Student enrolled successfully! Seat allocated: ${newStudent.seatNumber}`);
+      if (!response.ok) {
+        throw new Error(`Enrollment failed (${response.status})`);
+      }
+
+      await fetchStudents();
+      setFormData({ name: '', email: '', phone: '', gender: 'BOYS', seatSection: 'Regular' });
+    } catch (error) {
+      console.log(error.message || 'Unable to enroll student');
+    } finally {
+      setIsEnrolling(false);
+    }
   };
 
   const handleProcessPayment = (studentId) => {
-    setStudents(students.map(s => 
-      s.id === studentId ? { ...s, feeStatus: 'Paid' } : s
-    ));
-    alert('Payment processed successfully!');
+    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+    if (!targetStudent) return;
+    updateStudentStatus(targetStudent, { feeStatus: 'Paid' }, 'Payment status updated');
   };
 
   const handleCheckIn = (studentId) => {
+    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+    if (!targetStudent) return;
     const now = new Date().toLocaleString('en-IN');
-    setStudents(students.map(s => 
-      s.id === studentId ? { ...s, currentCheckIn: now, currentCheckOut: null } : s
-    ));
+    updateStudentStatus(targetStudent, { checkedIn: true, currentCheckIn: now, currentCheckOut: null }, 'Check-in updated');
   };
 
   const handleCheckOut = (studentId) => {
+    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+    if (!targetStudent) return;
     const now = new Date().toLocaleString('en-IN');
-    setStudents(students.map(s => 
-      s.id === studentId ? { ...s, currentCheckOut: now } : s
-    ));
+    updateStudentStatus(targetStudent, { checkedIn: false, currentCheckOut: now }, 'Check-out updated');
   };
 
   const handleRemoveStudent = (studentId) => {
-    if (window.confirm('Are you sure you want to remove this student?')) {
-      setStudents(students.filter(s => s.id !== studentId));
-    }
+    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+    if (!targetStudent) return;
+
+    // if (window.confirm('Are you sure you want to remove this student?')) {
+      updateStudentStatus(targetStudent, { active: false, subscriptionStatus: 'Inactive' }, 'Student marked inactive');
+    // }
   };
 
   return (
@@ -231,8 +290,25 @@ const Students = () => {
           </div>
 
           <div className="students-list">
-            {students.map(student => (
-              <div key={student.id} className="student-card">
+            {isLoading && <p>Loading students...</p>}
+
+            {!isLoading && loadError && (
+              <div>
+                <p>{loadError}</p>
+                <button className="btn btn-primary" onClick={fetchStudents}>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {!isLoading && !loadError && students.length === 0 && <p>No students found.</p>}
+
+            {!isLoading && !loadError && students.map(student => {
+              const rowId = student.studentId ?? student.id;
+              const isUpdatingRow = String(updatingStudentId) === String(rowId);
+
+              return (
+              <div key={rowId || student.email} className="student-card">
                 <div className="student-header">
                   <div className="student-info">
                     <h3>{student.name}</h3>
@@ -277,7 +353,8 @@ const Students = () => {
                   {student.feeStatus === 'Pending' && (
                     <button 
                       className="btn btn-primary"
-                      onClick={() => handleProcessPayment(student.id)}
+                      onClick={() => handleProcessPayment(rowId)}
+                      disabled={isUpdatingRow}
                     >
                       💳 Process Payment
                     </button>
@@ -296,28 +373,29 @@ const Students = () => {
                   <div className="checkin-buttons">
                     <button 
                       className="btn btn-success"
-                      onClick={() => handleCheckIn(student.id)}
-                      disabled={student.currentCheckIn && !student.currentCheckOut}
+                      onClick={() => handleCheckIn(rowId)}
+                      disabled={(student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
                     >
                       ✅ Check-In
                     </button>
                     <button 
                       className="btn btn-warning"
-                      onClick={() => handleCheckOut(student.id)}
-                      disabled={!student.currentCheckIn || student.currentCheckOut}
+                      onClick={() => handleCheckOut(rowId)}
+                      disabled={!student.currentCheckIn || student.currentCheckOut || isUpdatingRow}
                     >
                       ⏹️ Check-Out
                     </button>
                     <button 
                       className="btn btn-danger"
-                      onClick={() => handleRemoveStudent(student.id)}
+                      onClick={() => handleRemoveStudent(rowId)}
+                      disabled={isUpdatingRow}
                     >
                       🗑️ Remove
                     </button>
                   </div>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         </div>
       )}
@@ -399,8 +477,8 @@ const Students = () => {
                 </ul>
               </div>
 
-              <button type="submit" className="btn btn-primary btn-large">
-                ➕ Enroll Student
+              <button type="submit" className="btn btn-primary btn-large" disabled={isEnrolling}>
+                {isEnrolling ? '➕ Enrolling...' : '➕ Enroll Student'}
               </button>
             </form>
           </div>
@@ -424,7 +502,7 @@ const Students = () => {
                           className={`seat-indicator ${seatObj.available ? 'available' : 'occupied'}`}
                           title={`${seatObj.seat}: ${seatObj.available ? 'Available' : 'Occupied'}`}
                         >
-                          {seatObj.available ? '○' : '●'}
+                          {seatObj.available ? '?' : '?'}
                         </div>
                       ))}
                     </div>
