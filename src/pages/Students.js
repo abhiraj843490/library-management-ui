@@ -6,7 +6,7 @@ import {
   toApiStudentCreatePayload,
   toApiStudentUpdatePayload,
 } from '../interfaces/studentResponse';
-import { createStudentApi, getStudentsApi, updateStudentApi } from '../services/studentApi';
+import { createStudentApi, getSeatsApi, getStudentsApi, updateStudentApi } from '../services/studentApi';
 
 const Students = () => {
   const [activeTab, setActiveTab] = useState('manage');
@@ -20,8 +20,13 @@ const Students = () => {
   const [students, setStudents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [seatsLoadError, setSeatsLoadError] = useState('');
   const [updatingStudentId, setUpdatingStudentId] = useState(null);
   const [isEnrolling, setIsEnrolling] = useState(false);
+  const [availableSeats, setAvailableSeats] = useState({
+    BOYS: { Regular: [], Silent: [] },
+    GIRLS: { Regular: [], Silent: [] },
+  });
 
   const fetchStudents = useCallback(async () => {
     setIsLoading(true);
@@ -39,23 +44,61 @@ const Students = () => {
     }
   }, []);
 
+  const mapSeatsForUi = (seats = []) => {
+    const mapped = {
+      BOYS: { Regular: [], Silent: [] },
+      GIRLS: { Regular: [], Silent: [] },
+    };
+
+    seats.forEach((seat) => {
+      const normalizedGender = String(seat.gender || '').toUpperCase();
+      const normalizedSection = String(seat.section || seat.seatSection || '').toUpperCase();
+      const normalizedStatus = String(seat.status || '').toUpperCase();
+
+      const genderKey = normalizedGender === 'GIRL' || normalizedGender === 'GIRLS' ? 'GIRLS' : 'BOYS';
+      const sectionKey = normalizedSection === 'SILENT' ? 'Silent' : 'Regular';
+
+      mapped[genderKey][sectionKey].push({
+        seat: seat.seatNumber || seat.seat || '-',
+        available: normalizedStatus === 'AVAILABLE',
+      });
+    });
+
+    Object.values(mapped).forEach((sections) => {
+      Object.values(sections).forEach((seatsList) => {
+        seatsList.sort((a, b) => a.seat.localeCompare(b.seat, undefined, { numeric: true }));
+      });
+    });
+
+    return mapped;
+  };
+
+  const extractSeatsFromResponse = (response) => {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.content)) return response.data.content;
+    return [];
+  };
+
+  const fetchSeats = useCallback(async () => {
+    setSeatsLoadError('');
+    try {
+      const result = await getSeatsApi();
+      const seatData = extractSeatsFromResponse(result);
+      setAvailableSeats(mapSeatsForUi(seatData));
+    } catch (error) {
+      setSeatsLoadError(error.message || 'Unable to load seats');
+      setAvailableSeats({
+        BOYS: { Regular: [], Silent: [] },
+        GIRLS: { Regular: [], Silent: [] },
+      });
+    }
+  }, []);
+
   useEffect(() => {
     fetchStudents();
-  }, [fetchStudents]);
-
-  const availableSeats = useMemo(() => {
-    const seats = {
-      BOYS: {
-        Regular: Array.from({ length: 35 }, (_, i) => ({ seat: `B-${i + 1}`, available: Math.random() > 0.6 })),
-        Silent: Array.from({ length: 15 }, (_, i) => ({ seat: `B-${35 + i + 1}`, available: Math.random() > 0.7 })),
-      },
-      GIRLS: {
-        Regular: Array.from({ length: 35 }, (_, i) => ({ seat: `G-${i + 1}`, available: Math.random() > 0.5 })),
-        Silent: Array.from({ length: 15 }, (_, i) => ({ seat: `G-${35 + i + 1}`, available: Math.random() > 0.65 })),
-      },
-    };
-    return seats;
-  }, []);
+    fetchSeats();
+  }, [fetchStudents, fetchSeats]);
 
   const stats = useMemo(() => {
     const active = students.filter(s => s.subscriptionStatus === 'Active').length;
@@ -103,6 +146,7 @@ const Students = () => {
       if (successMessage) {
         console.log(successMessage);
       }
+      fetchSeats();
     } catch (error) {
       console.log(error.message || 'Unable to update student');
     } finally {
@@ -129,7 +173,7 @@ const Students = () => {
     try {
       await createStudentApi(toApiStudentCreatePayload(formData, availableSeat.seat));
 
-      await fetchStudents();
+      await Promise.all([fetchStudents(), fetchSeats()]);
       setFormData({ name: '', email: '', phone: '', gender: 'BOYS', seatSection: 'Regular' });
     } catch (error) {
       console.log(error.message || 'Unable to enroll student');
@@ -333,14 +377,14 @@ const Students = () => {
                     <button 
                       className="btn btn-success"
                       onClick={() => handleCheckIn(rowId)}
-                      disabled={(student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
+                      disabled={Boolean(student.currentCheckOut) || (student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
                     >
                       ✅ Check-In
                     </button>
                     <button 
                       className="btn btn-warning"
                       onClick={() => handleCheckOut(rowId)}
-                      disabled={!student.currentCheckIn || student.currentCheckOut || isUpdatingRow}
+                      disabled={!student.currentCheckIn || Boolean(student.currentCheckOut) || isUpdatingRow}
                     >
                       ⏹️ Check-Out
                     </button>
@@ -428,7 +472,7 @@ const Students = () => {
               <div className="form-info">
                 <p>💡 <strong>Subscription Details:</strong></p>
                 <ul>
-                  <li>Monthly Fee: ₹8,500</li>
+                  <li>Monthly Fee: ₹500</li>
                   <li>Duration: 3 months (auto-renewable)</li>
                   <li>Individual seat allocation</li>
                   <li>Automatic check-in/check-out tracking</li>
@@ -447,6 +491,14 @@ const Students = () => {
       {/* View Seats Tab */}
       {activeTab === 'seats' && (
         <div className="tab-content">
+          {seatsLoadError && (
+            <div>
+              <p>{seatsLoadError}</p>
+              <button className="btn btn-primary" onClick={fetchSeats}>
+                Retry
+              </button>
+            </div>
+          )}
           <div className="seats-grid">
             {Object.entries(availableSeats).map(([side, sections]) => (
               <div key={side} className="side-section">

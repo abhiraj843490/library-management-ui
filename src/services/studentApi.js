@@ -1,5 +1,6 @@
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080';
 const STUDENTS_ENDPOINT = `${API_BASE_URL}/api/students`;
+const SEATS_ENDPOINT = `${API_BASE_URL}/api/seats`;
 
 const buildHeaders = () => {
   const token = localStorage.getItem('token');
@@ -57,3 +58,5 @@ export const updateStudentApi = (studentId, payload) =>
     },
     'Update failed'
   );
+
+export const getSeatsApi = () => request(SEATS_ENDPOINT, { method: 'GET' }, 'Failed to fetch seats');
