@@ -1,71 +1,50 @@
 import React, { createContext, useContext, useState } from 'react';
+import { loginApi } from '../services/authApi';
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  // Mock users database
-  const mockUsers = [
-    {
-      id: 'ADM-001',
-      name: 'Akash V',
-      email: 'akash@gmail.com',
-      password: 'admin123',
-      role: 'ADMIN',
-      department: 'Management',
-    },
-    {
-      id: 'STU-001',
-      name: 'Aarav Kumar',
-      email: 'aarav.kumar@email.com',
-      password: 'student1',
-      role: 'STUDENT',
-      enrollment: '2026-01-10',
-      side: 'BOYS',
-      seatNumber: 'B-15',
-    },
-    {
-      id: 'STU-002',
-      name: 'Priya Sharma',
-      email: 'priya.sharma@email.com',
-      password: 'student1',
-      role: 'STUDENT',
-      enrollment: '2026-01-20',
-      side: 'GIRLS',
-      seatNumber: 'G-08',
-    },
-    {
-      id: 'STU-003',
-      name: 'Neha Patel',
-      email: 'neha.patel@email.com',
-      password: 'student1',
-      role: 'STUDENT',
-      enrollment: '2026-02-05',
-      side: 'GIRLS',
-      seatNumber: 'G-12',
-    },
-  ];
-
-  const login = (email, password) => {
-    const foundUser = mockUsers.find(u => u.email === email && u.password === password);
-    
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      setIsAuthenticated(true);
-      localStorage.setItem('authUser', JSON.stringify(userWithoutPassword));
-      return { success: true, message: 'Login successful' };
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('authUser');
+      return stored ? JSON.parse(stored) : null;
+    } catch (_) {
+      return null;
     }
-    
-    return { success: false, message: 'Invalid email or password' };
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = localStorage.getItem('token');
+    const authUser = localStorage.getItem('authUser');
+    return Boolean(token && authUser);
+  });
+
+  const login = async (email, password) => {
+    try {
+      const result = await loginApi(email, password);
+      const payload = result?.data || result;
+      const authUser = payload?.user;
+      const token = payload?.token;
+
+      if (!authUser || !token) {
+        return { success: false, message: 'Invalid login response from server' };
+      }
+
+      setUser(authUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('authUser', JSON.stringify(authUser));
+      localStorage.setItem('token', token);
+      return { success: true, message: result?.message || 'Login successful' };
+    } catch (error) {
+      return { success: false, message: error.message || 'Invalid email or password' };
+    }
   };
 
   const logout = () => {
     setUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('authUser');
+    localStorage.removeItem('token');
   };
 
   const value = {

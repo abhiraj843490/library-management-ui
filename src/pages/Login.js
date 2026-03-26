@@ -11,7 +11,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -22,31 +22,15 @@ export default function Login() {
       return;
     }
 
-    setTimeout(() => {
-      const result = login(email, password);
-      if (result.success) {
-        navigate('/dashboard');
-      } else {
-        setError(result.message);
-      }
-      setLoading(false);
-    }, 500);
+    const result = await login(email, password);
+    if (result.success) {
+      navigate('/dashboard');
+    } else {
+      setError(result.message);
+    }
+    setLoading(false);
   };
 
-  const handleDemoAdmin = () => {
-    setEmail('akash@gmail.com');
-    setPassword('admin123');
-  };
-
-  const handleDemoStudent = () => {
-    setEmail('aarav.kumar@email.com');
-    setPassword('student1');
-  };
-
-  const handleDemoGirl = () => {
-    setEmail('neha.patel@email.com');
-    setPassword('student1');
-  };
 
   return (
     <div className="login-container">
@@ -101,65 +85,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="demo-section">
-            <p className="demo-title">📌 Demo Credentials</p>
-            <div className="demo-buttons">
-              <button
-                type="button"
-                className="demo-button demo-admin"
-                onClick={handleDemoAdmin}
-                disabled={loading}
-              >
-                👨‍💼 Admin
-                <small>akash@gmail.com</small>
-              </button>
-              <button
-                type="button"
-                className="demo-button demo-student"
-                onClick={handleDemoStudent}
-                disabled={loading}
-              >
-                👨‍🎓 Student
-                <small>aarav.kumar@email.com</small>
-              </button>
-              <button
-                type="button"
-                className="demo-button demo-student"
-                onClick={handleDemoGirl}
-                disabled={loading}
-              >
-                👩‍🎓 Student (Girl)
-                <small>neha.patel@email.com</small>
-              </button>
-            </div>
-          </div>
-
-          <div className="credentials-info">
-            <h4>Demo Accounts Available:</h4>
-            <ul>
-              <li>
-                <strong>Admin Account:</strong>
-                <br />
-                Email: akash@gmail.com
-                <br />
-                Password: admin123
-              </li>
-              <li>
-                <strong>Student Account (Boy):</strong>
-                <br />
-                Email: aarav.kumar@email.com
-                <br />
-                Password: student1
-              </li>
-              <li>
-                <strong>Student Account (Girl):</strong>
-                <br />
-                Email: neha.patel@email.com
-                <br />
-                Password: student1
-              </li>
-            </ul>
-          </div>
         </div>
 
         <div className="login-background">

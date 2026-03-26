@@ -1,12 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { extractStudentsFromResponse } from '../interfaces/studentResponse';
+import { getStudentsApi } from '../services/studentApi';
+import {
+  cancelBookingApi,
+  getMemberBookingsApi,
+  submitBookingFeedbackApi,
+} from '../services/studySpaceApi';
 import '../styles/MyBookings.css';
 
+const extractBookingsFromResponse = (response) => {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.data?.content)) return response.data.content;
+  return [];
+};
+
+const normalizeBooking = (booking = {}) => {
+  const status = String(booking.status || 'CONFIRMED').toUpperCase();
+  const bookingDate = booking.bookingDate || booking.date || booking.startDate || booking.startTime || '';
+  const canBeCancelled =
+    booking.canBeCancelled !== undefined
+      ? Boolean(booking.canBeCancelled)
+      : status === 'CONFIRMED' && Boolean(bookingDate) && new Date(bookingDate) > new Date();
+
+  return {
+    id: booking.id || booking.bookingId || booking.referenceId,
+    spaceName:
+      booking.spaceName ||
+      booking.studySpaceName ||
+      booking.studySpace?.spaceName ||
+      booking.space?.spaceName ||
+      'Study Space',
+    slotName:
+      booking.slotName ||
+      booking.timeSlotName ||
+      booking.timeSlot?.slotName ||
+      booking.slot?.slotName ||
+      '-',
+    bookingDate,
+    status,
+    bookingType: String(booking.bookingType || 'SOLO').toUpperCase(),
+    groupSize: Number(booking.groupSize || 1),
+    averageRating:
+      booking.averageRating !== undefined && booking.averageRating !== null
+        ? Number(booking.averageRating)
+        : booking.feedbackRating !== undefined && booking.feedbackRating !== null
+          ? Number(booking.feedbackRating)
+          : null,
+    canBeCancelled,
+  };
+};
+
+const parseNumericId = (value) => {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 const MyBookings = () => {
+  const { user } = useAuth();
   const [bookings, setBookings] = useState([]);
-  const [filteredBookings, setFilteredBookings] = useState([]);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [loading, setLoading] = useState(false);
-  const [currentMemberId] = useState(1); // Replace with actual member ID from auth
+  const [resolvingMemberId, setResolvingMemberId] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [feedbackData, setFeedbackData] = useState({
@@ -18,93 +76,119 @@ const MyBookings = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState(null);
+  const [currentMemberId, setCurrentMemberId] = useState(null);
 
   useEffect(() => {
-    loadUserBookings();
-  }, []);
+    let isMounted = true;
 
-  useEffect(() => {
-    filterBookings();
-  }, [bookings, filterStatus]);
+    const resolveMemberId = async () => {
+      const directId = parseNumericId(user?.studentId) || parseNumericId(user?.id);
+      if (directId) {
+        if (isMounted) {
+          setCurrentMemberId(directId);
+          setLoadError('');
+        }
+        return;
+      }
+
+      if (!user) {
+        if (isMounted) setCurrentMemberId(null);
+        return;
+      }
+
+      try {
+        setResolvingMemberId(true);
+        const result = await getStudentsApi();
+        const students = extractStudentsFromResponse(result);
+        const authUserId = String(user?.id || '').trim();
+        const authUserCode = String(user?.userCode || user?.studentCode || '').trim();
+        const authEmail = String(user?.email || '').trim().toLowerCase();
+
+        const matchedStudent = students.find((student) => {
+          const studentId = String(student?.studentId ?? student?.id ?? '').trim();
+          const studentUserCode = String(student?.userCode || student?.studentCode || '').trim();
+          const studentEmail = String(student?.email || '').trim().toLowerCase();
+
+          return (
+            (authUserId && studentId && studentId === authUserId) ||
+            (authUserCode && studentUserCode && studentUserCode === authUserCode) ||
+            (authEmail && studentEmail && studentEmail === authEmail)
+          );
+        });
+
+        const resolvedId = parseNumericId(matchedStudent?.studentId ?? matchedStudent?.id);
+        if (isMounted) {
+          setCurrentMemberId(resolvedId);
+          if (!resolvedId) {
+            setLoadError('Unable to map logged-in user to backend student id for bookings.');
+          } else {
+            setLoadError('');
+          }
+        }
+      } catch (_) {
+        if (isMounted) {
+          setCurrentMemberId(null);
+          setLoadError('Unable to resolve backend student id. Please verify student records.');
+        }
+      } finally {
+        if (isMounted) {
+          setResolvingMemberId(false);
+        }
+      }
+    };
+
+    resolveMemberId();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const loadUserBookings = async () => {
+    if (!currentMemberId) {
+      setBookings([]);
+      return;
+    }
+
     try {
       setLoading(true);
-      // Replace with actual API call: GET /api/study-spaces/members/{memberId}/bookings
-      const mockBookings = [
-        {
-          id: 1,
-          spaceName: 'Study Room B1',
-          slotName: 'Morning 1 (9-11 AM)',
-          bookingDate: '2026-03-25',
-          status: 'COMPLETED',
-          bookingType: 'SOLO',
-          groupSize: 1,
-          spaceName: 'Study Room B1',
-          averageRating: 4.5,
-          canBeCancelled: false,
-        },
-        {
-          id: 2,
-          spaceName: 'Private Pod A1',
-          slotName: 'Afternoon 1 (1-3 PM)',
-          bookingDate: '2026-03-26',
-          status: 'CONFIRMED',
-          bookingType: 'SOLO',
-          groupSize: 1,
-          averageRating: null,
-          canBeCancelled: true,
-        },
-        {
-          id: 3,
-          spaceName: 'Group Study D1',
-          slotName: 'Night 1 (7-9 PM)',
-          bookingDate: '2026-03-27',
-          status: 'CONFIRMED',
-          bookingType: 'GROUP',
-          groupSize: 3,
-          averageRating: null,
-          canBeCancelled: true,
-        },
-        {
-          id: 4,
-          spaceName: 'Silent Zone C1',
-          slotName: 'Morning 2 (11 AM-1 PM)',
-          bookingDate: '2026-03-22',
-          status: 'CANCELLED',
-          bookingType: 'SOLO',
-          groupSize: 1,
-          averageRating: null,
-          canBeCancelled: false,
-        },
-      ];
-      setBookings(mockBookings);
-      setLoading(false);
+      setLoadError('');
+      const result = await getMemberBookingsApi(currentMemberId);
+      const list = extractBookingsFromResponse(result).map(normalizeBooking);
+      setBookings(list);
     } catch (error) {
-      console.error('Error loading bookings:', error);
+      setLoadError(error.message || 'Error loading bookings');
+      setBookings([]);
+    } finally {
       setLoading(false);
     }
   };
 
-  const filterBookings = () => {
-    if (filterStatus === 'ALL') {
-      setFilteredBookings(bookings);
-    } else if (filterStatus === 'UPCOMING') {
-      setFilteredBookings(bookings.filter(b => b.status === 'CONFIRMED' && new Date(b.bookingDate) > new Date()));
-    } else if (filterStatus === 'PAST') {
-      setFilteredBookings(bookings.filter(b => b.status === 'COMPLETED' && new Date(b.bookingDate) <= new Date()));
-    } else {
-      setFilteredBookings(bookings.filter(b => b.status === filterStatus));
+  useEffect(() => {
+    if (resolvingMemberId) return;
+    loadUserBookings();
+  }, [currentMemberId, resolvingMemberId]);
+
+  const filteredBookings = useMemo(() => {
+    if (filterStatus === 'ALL') return bookings;
+    if (filterStatus === 'UPCOMING') {
+      return bookings.filter((b) => b.status === 'CONFIRMED' && new Date(b.bookingDate) > new Date());
     }
-  };
+    return bookings.filter((b) => b.status === filterStatus);
+  }, [bookings, filterStatus]);
 
   const getStatusBadgeClass = (status) => {
-    switch(status) {
-      case 'CONFIRMED': return 'badge-confirmed';
-      case 'COMPLETED': return 'badge-completed';
-      case 'CANCELLED': return 'badge-cancelled';
-      case 'NO_SHOW': return 'badge-no-show';
-      default: return '';
+    switch (status) {
+      case 'CONFIRMED':
+        return 'badge-confirmed';
+      case 'COMPLETED':
+        return 'badge-completed';
+      case 'CANCELLED':
+        return 'badge-cancelled';
+      case 'NO_SHOW':
+        return 'badge-no-show';
+      default:
+        return '';
     }
   };
 
@@ -122,30 +206,20 @@ const MyBookings = () => {
       alert('Please provide a cancellation reason');
       return;
     }
+    if (!bookingToCancel?.id) return;
 
     try {
       setLoading(true);
-      // Replace with actual API call: PUT /api/study-spaces/bookings/{id}/cancel
-      const cancellationData = {
-        reason: cancelReason,
-      };
-
-      console.log('Cancellation submitted:', cancellationData);
-      
-      // Update booking status locally
-      setBookings(bookings.map(b => 
-        b.id === bookingToCancel.id 
-          ? { ...b, status: 'CANCELLED', canBeCancelled: false }
-          : b
-      ));
+      await cancelBookingApi(bookingToCancel.id, { reason: cancelReason.trim() });
 
       alert('Booking cancelled successfully!');
       setShowCancelDialog(false);
       setCancelReason('');
       setBookingToCancel(null);
-      setLoading(false);
+      await loadUserBookings();
     } catch (error) {
-      alert('Error cancelling booking: ' + error.message);
+      alert('Error cancelling booking: ' + (error.message || 'Unknown error'));
+    } finally {
       setLoading(false);
     }
   };
@@ -160,17 +234,17 @@ const MyBookings = () => {
   };
 
   const submitFeedback = async () => {
+    if (!selectedBooking?.id) return;
+
     try {
       setLoading(true);
-      // Replace with actual API call: POST /api/study-spaces/bookings/{id}/feedback
-      const feedbackPayload = {
+      await submitBookingFeedbackApi(selectedBooking.id, {
         rating: feedbackData.rating,
         cleanlinessRating: feedbackData.cleanlinessRating,
         noiseLevel: feedbackData.noiseLevel,
         comment: feedbackData.comment,
-      };
+      });
 
-      console.log('Feedback submitted:', feedbackPayload);
       alert('Thank you for your feedback!');
       setShowFeedbackForm(false);
       setSelectedBooking(null);
@@ -180,19 +254,23 @@ const MyBookings = () => {
         noiseLevel: 'QUIET',
         comment: '',
       });
-      setLoading(false);
+      await loadUserBookings();
     } catch (error) {
-      alert('Error submitting feedback: ' + error.message);
+      alert('Error submitting feedback: ' + (error.message || 'Unknown error'));
+    } finally {
       setLoading(false);
     }
   };
 
   const getTimeUntilBooking = (bookingDate) => {
+    if (!bookingDate) return '-';
     const now = new Date();
     const booking = new Date(bookingDate);
+    if (Number.isNaN(booking.getTime())) return '-';
+
     const diff = booking - now;
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
+
     if (days < 0) return 'Past';
     if (days === 0) return 'Today';
     if (days === 1) return 'Tomorrow';
@@ -202,32 +280,36 @@ const MyBookings = () => {
   return (
     <div className="my-bookings-container">
       <div className="page-header">
-        <h1>📅 My Study Space Bookings</h1>
+        <h1>My Study Space Bookings</h1>
         <p>View and manage your study space reservations</p>
+        {loadError && (
+          <p>
+            {loadError} <button onClick={loadUserBookings}>Retry</button>
+          </p>
+        )}
       </div>
 
-      {/* Filter Section */}
       <div className="filter-section">
         <div className="filter-tabs">
-          <button 
+          <button
             className={`filter-tab ${filterStatus === 'ALL' ? 'active' : ''}`}
             onClick={() => setFilterStatus('ALL')}
           >
             All Bookings ({bookings.length})
           </button>
-          <button 
+          <button
             className={`filter-tab ${filterStatus === 'UPCOMING' ? 'active' : ''}`}
             onClick={() => setFilterStatus('UPCOMING')}
           >
             Upcoming
           </button>
-          <button 
+          <button
             className={`filter-tab ${filterStatus === 'COMPLETED' ? 'active' : ''}`}
             onClick={() => setFilterStatus('COMPLETED')}
           >
             Completed
           </button>
-          <button 
+          <button
             className={`filter-tab ${filterStatus === 'CANCELLED' ? 'active' : ''}`}
             onClick={() => setFilterStatus('CANCELLED')}
           >
@@ -236,18 +318,19 @@ const MyBookings = () => {
         </div>
       </div>
 
-      {/* Bookings List */}
       <div className="bookings-list">
         {loading ? (
           <div className="loading">Loading your bookings...</div>
+        ) : resolvingMemberId ? (
+          <div className="loading">Resolving your student profile...</div>
         ) : filteredBookings.length === 0 ? (
           <div className="empty-state">
             <p>No bookings found for this category.</p>
             <p className="hint">Start by booking a study space from the "Study Spaces" section.</p>
           </div>
         ) : (
-          filteredBookings.map(booking => (
-            <div key={booking.id} className="booking-card">
+          filteredBookings.map((booking) => (
+            <div key={booking.id || `${booking.spaceName}-${booking.bookingDate}`} className="booking-card">
               <div className="booking-header">
                 <div className="booking-title">
                   <h3>{booking.spaceName}</h3>
@@ -263,22 +346,24 @@ const MyBookings = () => {
               <div className="booking-details">
                 <div className="detail-grid">
                   <div className="detail-item">
-                    <span className="label">📅 Date</span>
-                    <span className="value">{new Date(booking.bookingDate).toLocaleDateString()}</span>
+                    <span className="label">Date</span>
+                    <span className="value">
+                      {booking.bookingDate ? new Date(booking.bookingDate).toLocaleDateString() : '-'}
+                    </span>
                   </div>
                   <div className="detail-item">
-                    <span className="label">🕐 Time Slot</span>
-                    <span className="value">{booking.slotName}</span>
+                    <span className="label">Time Slot</span>
+                    <span className="value">{booking.slotName || '-'}</span>
                   </div>
                   <div className="detail-item">
-                    <span className="label">👥 Booking Type</span>
+                    <span className="label">Booking Type</span>
                     <span className="value">
                       {booking.bookingType === 'SOLO' ? 'Solo' : `Group (${booking.groupSize} people)`}
                     </span>
                   </div>
-                  {booking.averageRating && (
+                  {booking.averageRating !== null && (
                     <div className="detail-item">
-                      <span className="label">⭐ Your Rating</span>
+                      <span className="label">Your Rating</span>
                       <span className="value rating">{booking.averageRating}/5.0</span>
                     </div>
                   )}
@@ -287,18 +372,12 @@ const MyBookings = () => {
 
               <div className="booking-actions">
                 {booking.canBeCancelled && (
-                  <button 
-                    className="secondary-button danger"
-                    onClick={() => handleCancelBooking(booking)}
-                  >
+                  <button className="secondary-button danger" onClick={() => handleCancelBooking(booking)}>
                     Cancel Booking
                   </button>
                 )}
-                {booking.status === 'COMPLETED' && !booking.averageRating && (
-                  <button 
-                    className="primary-button"
-                    onClick={() => handleLeaveFeedback(booking)}
-                  >
+                {booking.status === 'COMPLETED' && booking.averageRating === null && (
+                  <button className="primary-button" onClick={() => handleLeaveFeedback(booking)}>
                     Leave Feedback
                   </button>
                 )}
@@ -308,7 +387,6 @@ const MyBookings = () => {
         )}
       </div>
 
-      {/* Feedback Form Modal */}
       {showFeedbackForm && selectedBooking && (
         <div className="modal-overlay" onClick={() => setShowFeedbackForm(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -321,11 +399,11 @@ const MyBookings = () => {
               <div className="form-group">
                 <label>Overall Rating *</label>
                 <div className="star-rating">
-                  {[1, 2, 3, 4, 5].map(star => (
+                  {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       className={`star ${star <= feedbackData.rating ? 'filled' : ''}`}
-                      onClick={() => setFeedbackData({...feedbackData, rating: star})}
+                      onClick={() => setFeedbackData({ ...feedbackData, rating: star })}
                     >
                       ★
                     </button>
@@ -336,11 +414,11 @@ const MyBookings = () => {
               <div className="form-group">
                 <label>Cleanliness Rating *</label>
                 <div className="star-rating">
-                  {[1, 2, 3, 4, 5].map(star => (
+                  {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       className={`star ${star <= feedbackData.cleanlinessRating ? 'filled' : ''}`}
-                      onClick={() => setFeedbackData({...feedbackData, cleanlinessRating: star})}
+                      onClick={() => setFeedbackData({ ...feedbackData, cleanlinessRating: star })}
                     >
                       ★
                     </button>
@@ -350,9 +428,9 @@ const MyBookings = () => {
 
               <div className="form-group">
                 <label>Noise Level</label>
-                <select 
+                <select
                   value={feedbackData.noiseLevel}
-                  onChange={(e) => setFeedbackData({...feedbackData, noiseLevel: e.target.value})}
+                  onChange={(e) => setFeedbackData({ ...feedbackData, noiseLevel: e.target.value })}
                 >
                   <option value="QUIET">Quiet</option>
                   <option value="MODERATE">Moderate</option>
@@ -362,26 +440,19 @@ const MyBookings = () => {
 
               <div className="form-group">
                 <label>Additional Comments</label>
-                <textarea 
+                <textarea
                   value={feedbackData.comment}
-                  onChange={(e) => setFeedbackData({...feedbackData, comment: e.target.value})}
+                  onChange={(e) => setFeedbackData({ ...feedbackData, comment: e.target.value })}
                   placeholder="Share your experience..."
                   rows="4"
                 />
               </div>
 
               <div className="modal-actions">
-                <button 
-                  className="secondary-button" 
-                  onClick={() => setShowFeedbackForm(false)}
-                >
+                <button className="secondary-button" onClick={() => setShowFeedbackForm(false)}>
                   Skip
                 </button>
-                <button 
-                  className="primary-button" 
-                  onClick={submitFeedback}
-                  disabled={loading}
-                >
+                <button className="primary-button" onClick={submitFeedback} disabled={loading}>
                   {loading ? 'Submitting...' : 'Submit Feedback'}
                 </button>
               </div>
@@ -390,7 +461,6 @@ const MyBookings = () => {
         </div>
       )}
 
-      {/* Cancellation Dialog */}
       {showCancelDialog && bookingToCancel && (
         <div className="modal-overlay" onClick={() => setShowCancelDialog(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -401,12 +471,15 @@ const MyBookings = () => {
 
             <div className="cancellation-form">
               <div className="warning-box">
-                <p>⚠️ You are about to cancel your booking for <strong>{bookingToCancel.spaceName}</strong> on <strong>{new Date(bookingToCancel.bookingDate).toLocaleDateString()}</strong></p>
+                <p>
+                  You are about to cancel your booking for <strong>{bookingToCancel.spaceName}</strong> on{' '}
+                  <strong>{bookingToCancel.bookingDate ? new Date(bookingToCancel.bookingDate).toLocaleDateString() : '-'}</strong>
+                </p>
               </div>
 
               <div className="form-group">
                 <label>Reason for Cancellation *</label>
-                <textarea 
+                <textarea
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
                   placeholder="Please let us know why you're cancelling..."
@@ -415,17 +488,10 @@ const MyBookings = () => {
               </div>
 
               <div className="modal-actions">
-                <button 
-                  className="secondary-button" 
-                  onClick={() => setShowCancelDialog(false)}
-                >
+                <button className="secondary-button" onClick={() => setShowCancelDialog(false)}>
                   Keep Booking
                 </button>
-                <button 
-                  className="danger-button" 
-                  onClick={submitCancellation}
-                  disabled={loading}
-                >
+                <button className="danger-button" onClick={submitCancellation} disabled={loading}>
                   {loading ? 'Cancelling...' : 'Confirm Cancellation'}
                 </button>
               </div>

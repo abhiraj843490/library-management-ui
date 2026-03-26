@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  createBookingApi,
+  getAvailableSpacesApi,
+  getTimeSlotsApi,
+} from '../services/studySpaceApi';
 import '../styles/StudySpaces.css';
 
+const extractList = (response) => {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
+  if (Array.isArray(response?.data?.content)) return response.data.content;
+  return [];
+};
+
 const StudySpaces = () => {
-  const [studySpaces, setStudySpaces] = useState([]);
+  const { user } = useAuth();
   const [timeSlots, setTimeSlots] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('');
@@ -14,49 +27,18 @@ const StudySpaces = () => {
   const [groupSize, setGroupSize] = useState(1);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
-  const [currentMemberId] = useState(1); // Replace with actual member ID from auth
+  const currentMemberId = user?.studentId;
 
   // Initialize data
   useEffect(() => {
-    loadStudySpaces();
     loadTimeSlots();
     setSelectedDate(new Date().toISOString().split('T')[0]);
   }, []);
 
-  const loadStudySpaces = async () => {
-    try {
-      setLoading(true);
-      // Replace with actual API call
-      const mockSpaces = [
-        { id: 1, spaceName: 'Private Pod A1', capacity: 1, roomType: 'INDIVIDUAL', location: 'First Floor', floor: 1, facilities: ['WiFi', 'Power Socket', 'AC'] },
-        { id: 2, spaceName: 'Private Pod A2', capacity: 1, roomType: 'INDIVIDUAL', location: 'First Floor', floor: 1, facilities: ['WiFi', 'Power Socket', 'AC'] },
-        { id: 3, spaceName: 'Study Room B1', capacity: 4, roomType: 'GROUP', location: 'First Floor', floor: 1, facilities: ['WiFi', 'Whiteboard', 'Projector', 'AC'] },
-        { id: 4, spaceName: 'Study Room B2', capacity: 4, roomType: 'DISCUSSION', location: 'First Floor', floor: 1, facilities: ['WiFi', 'Whiteboard', 'AC'] },
-        { id: 5, spaceName: 'Silent Zone C1', capacity: 8, roomType: 'SILENT', location: 'Second Floor', floor: 2, facilities: ['WiFi', 'AC'] },
-        { id: 6, spaceName: 'Group Study D1', capacity: 6, roomType: 'GROUP', location: 'Second Floor', floor: 2, facilities: ['WiFi', 'Whiteboard', 'Projector', 'AC'] },
-        { id: 7, spaceName: 'Night Lab E1', capacity: 10, roomType: 'GROUP', location: 'Third Floor', floor: 3, facilities: ['WiFi', 'Power Sockets', 'AC', 'Coffee Machine'] },
-      ];
-      setStudySpaces(mockSpaces);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading study spaces:', error);
-      setLoading(false);
-    }
-  };
-
   const loadTimeSlots = async () => {
     try {
-      // Replace with actual API call
-      const mockSlots = [
-        { id: 1, slotName: 'Morning 1 (9-11 AM)', startTime: '09:00', endTime: '11:00', slotType: 'DAY', durationMinutes: 120 },
-        { id: 2, slotName: 'Morning 2 (11 AM-1 PM)', startTime: '11:00', endTime: '13:00', slotType: 'DAY', durationMinutes: 120 },
-        { id: 3, slotName: 'Afternoon 1 (1-3 PM)', startTime: '13:00', endTime: '15:00', slotType: 'DAY', durationMinutes: 120 },
-        { id: 4, slotName: 'Afternoon 2 (3-5 PM)', startTime: '15:00', endTime: '17:00', slotType: 'DAY', durationMinutes: 120 },
-        { id: 5, slotName: 'Evening 1 (5-7 PM)', startTime: '17:00', endTime: '19:00', slotType: 'DAY', durationMinutes: 120 },
-        { id: 6, slotName: 'Night 1 (7-9 PM)', startTime: '19:00', endTime: '21:00', slotType: 'NIGHT', durationMinutes: 120 },
-        { id: 7, slotName: 'Night 2 (9-11 PM)', startTime: '21:00', endTime: '23:00', slotType: 'NIGHT', durationMinutes: 120 },
-      ];
-      setTimeSlots(mockSlots);
+      const result = await getTimeSlotsApi();
+      setTimeSlots(extractList(result));
     } catch (error) {
       console.error('Error loading time slots:', error);
     }
@@ -67,16 +49,20 @@ const StudySpaces = () => {
       alert('Please select both date and time slot');
       return;
     }
+    if (!currentMemberId) {
+      alert('Unable to identify logged-in student');
+      return;
+    }
 
     try {
       setLoading(true);
-      // Replace with actual API call: GET /api/study-spaces/available?timeSlotId=&date=
-      const filtered = studySpaces.filter(space => {
-        if (selectedSpaceType !== 'ALL' && space.roomType !== selectedSpaceType) return false;
-        // In real app, would check availability from server
-        return true;
+      const result = await getAvailableSpacesApi({
+        memberId: currentMemberId,
+        bookingDate: selectedDate,
+        timeSlotId: selectedTimeSlot,
+        roomType: selectedSpaceType,
       });
-      setAvailableSpaces(filtered);
+      setAvailableSpaces(extractList(result));
       setLoading(false);
     } catch (error) {
       console.error('Error searching available spaces:', error);
@@ -90,6 +76,10 @@ const StudySpaces = () => {
   };
 
   const submitBooking = async () => {
+    if (!currentMemberId) {
+      alert('Unable to identify logged-in student');
+      return;
+    }
     if (bookingType === 'GROUP' && groupSize > selectedSpace.capacity) {
       alert(`Group size cannot exceed space capacity of ${selectedSpace.capacity}`);
       return;
@@ -97,24 +87,23 @@ const StudySpaces = () => {
 
     try {
       setLoading(true);
-      // Replace with actual API call: POST /api/study-spaces/bookings
-      const bookingData = {
+      await createBookingApi({
         memberId: currentMemberId,
         studySpaceId: selectedSpace.id,
-        timeSlotId: selectedTimeSlot,
+        timeSlotId: Number(selectedTimeSlot),
         bookingDate: selectedDate,
-        bookingType: bookingType,
+        bookingType,
         groupSize: bookingType === 'SOLO' ? 1 : groupSize,
-        notes: notes,
-      };
+        notes,
+      });
 
-      console.log('Booking submitted:', bookingData);
       alert('Study space booked successfully!');
       setShowBookingForm(false);
       setSelectedSpace(null);
       setBookingType('SOLO');
       setGroupSize(1);
       setNotes('');
+      await searchAvailableSpaces();
       setLoading(false);
     } catch (error) {
       alert('Error booking study space: ' + error.message);
@@ -124,10 +113,8 @@ const StudySpaces = () => {
 
   const getRoomTypeBadgeClass = (roomType) => {
     switch(roomType) {
-      case 'INDIVIDUAL': return 'badge-individual';
-      case 'GROUP': return 'badge-group';
+      case 'REGULAR': return 'badge-group';
       case 'SILENT': return 'badge-silent';
-      case 'DISCUSSION': return 'badge-discussion';
       default: return '';
     }
   };
@@ -168,10 +155,8 @@ const StudySpaces = () => {
             <label>Room Type</label>
             <select value={selectedSpaceType} onChange={(e) => setSelectedSpaceType(e.target.value)}>
               <option value="ALL">All Types</option>
-              <option value="INDIVIDUAL">Individual Pods</option>
-              <option value="GROUP">Group Study</option>
+              <option value="REGULAR">Regular</option>
               <option value="SILENT">Silent Zone</option>
-              <option value="DISCUSSION">Discussion Room</option>
             </select>
           </div>
 
@@ -212,9 +197,8 @@ const StudySpaces = () => {
             <div className="facilities">
               <strong>Facilities:</strong>
               <div className="facility-list">
-                {space.facilities.map((facility, idx) => (
-                  <span key={idx} className="facility-tag">{facility}</span>
-                ))}
+                <span className="facility-tag">{space.roomType}</span>
+                <span className="facility-tag">Seat</span>
               </div>
             </div>
 

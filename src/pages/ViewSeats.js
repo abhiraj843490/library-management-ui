@@ -1,28 +1,56 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { getSeatsApi } from '../services/studentApi';
 import '../styles/ViewSeats.css';
 
 const ViewSeats = () => {
   const { user } = useAuth();
+  const [seatsData, setSeatsData] = useState({
+    BOYS: { Regular: [], Silent: [] },
+    GIRLS: { Regular: [], Silent: [] },
+  });
 
-  // Generate seats for both sides
-  const allAvailableSeats = useMemo(() => {
-    const seats = {
-      BOYS: {
-        Regular: Array.from({ length: 35 }, (_, i) => ({ seat: `B-${i + 1}`, available: Math.random() > 0.6 })),
-        Silent: Array.from({ length: 15 }, (_, i) => ({ seat: `B-${35 + i + 1}`, available: Math.random() > 0.7 })),
-      },
-      GIRLS: {
-        Regular: Array.from({ length: 35 }, (_, i) => ({ seat: `G-${i + 1}`, available: Math.random() > 0.5 })),
-        Silent: Array.from({ length: 15 }, (_, i) => ({ seat: `G-${35 + i + 1}`, available: Math.random() > 0.65 })),
-      },
+  useEffect(() => {
+    const loadSeats = async () => {
+      try {
+        const response = await getSeatsApi();
+        const seats = Array.isArray(response) ? response : Array.isArray(response?.data) ? response.data : [];
+        const mapped = {
+          BOYS: { Regular: [], Silent: [] },
+          GIRLS: { Regular: [], Silent: [] },
+        };
+
+        seats.forEach((seat) => {
+          const gender = String(seat.gender || '').toUpperCase();
+          const section = String(seat.section || '').toUpperCase();
+          const status = String(seat.status || '').toUpperCase();
+
+          const sideKey = gender === 'GIRL' || gender === 'GIRLS' ? 'GIRLS' : 'BOYS';
+          const sectionKey = section === 'SILENT' ? 'Silent' : 'Regular';
+          mapped[sideKey][sectionKey].push({
+            seat: seat.seatNumber,
+            available: status === 'AVAILABLE',
+          });
+        });
+
+        Object.values(mapped).forEach((sections) => {
+          Object.values(sections).forEach((list) => {
+            list.sort((a, b) => a.seat.localeCompare(b.seat, undefined, { numeric: true }));
+          });
+        });
+
+        setSeatsData(mapped);
+      } catch (error) {
+        console.error('Error loading seats', error);
+      }
     };
-    return seats;
+
+    loadSeats();
   }, []);
 
   // Get only the student's side
-  const studentSide = user?.side || 'BOYS';
-  const availableSeats = allAvailableSeats[studentSide];
+  const studentSide = String(user?.gender || '').toUpperCase().startsWith('GIRL') ? 'GIRLS' : 'BOYS';
+  const availableSeats = seatsData[studentSide];
 
   // Calculate statistics
   const stats = useMemo(() => {
