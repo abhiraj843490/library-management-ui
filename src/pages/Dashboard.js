@@ -1,33 +1,78 @@
-import { useMemo } from 'react';
-import { useLibrary } from '../App';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { extractStudentsFromResponse, normalizeStudent } from '../interfaces/studentResponse';
+import { getSeatsApi, getStudentsApi } from '../services/studentApi';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { members } = useLibrary();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const [students, setStudents] = useState([]);
+  const [seats, setSeats] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const extractSeatsFromResponse = (response) => {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.content)) return response.data.content;
+    return [];
+  };
+
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const [studentsResult, seatsResult] = await Promise.all([getStudentsApi(), getSeatsApi()]);
+      const studentsData = extractStudentsFromResponse(studentsResult).map(normalizeStudent);
+      const seatsData = extractSeatsFromResponse(seatsResult);
+      setStudents(studentsData);
+      setSeats(seatsData);
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load dashboard data');
+      setStudents([]);
+      setSeats([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   // Define helper functions first
   const memberStatus = (status) => {
     if (status === 'Active') return 'Active ✓';
-    if (status === 'Review') return 'Pending ⏳';
+    if (status === 'Pending') return 'Pending ⏳';
     return 'Inactive';
   };
 
   const getMemberStatus = (status) => {
     switch(status) {
       case 'Active': return 'active';
-      case 'Review': return 'warning';
+      case 'Pending': return 'warning';
       default: return 'neutral';
     }
   };
 
+  const currentStudent = useMemo(() => {
+    return students.find(s =>
+      (user?.email && s.email === user.email) ||
+      (user?.id && String(s.id) === String(user.id)) ||
+      (user?.id && String(s.userCode) === String(user.id)) ||
+      (user?.id && String(s.studentId) === String(user.id))
+    ) || null;
+  }, [students, user]);
+
   const stats = useMemo(() => {
+    const totalSeats = seats.length;
+    const availableSeats = seats.filter(s => String(s.status || '').toUpperCase() === 'AVAILABLE').length;
+
     if (isAdmin) {
-      const activeMembers = members.filter(m => m.status === 'Active').length;
-      const reviewMembers = members.filter(m => m.status === 'Review').length;
-      const totalMembers = members.length;
+      const activeMembers = students.filter(m => m.subscriptionStatus === 'Active').length;
+      const pendingMembers = students.filter(m => m.feeStatus === 'Pending').length;
+      const totalMembers = students.length;
 
       return [
         {
@@ -43,25 +88,25 @@ export default function Dashboard() {
           color: 'primary',
         },
         {
-          label: 'Under Review',
-          value: reviewMembers,
-          caption: 'Awaiting approval',
+          label: 'Pending Fees',
+          value: pendingMembers,
+          caption: 'Awaiting payment',
           color: 'warning',
         },
         {
           label: 'Total Seats',
-          value: 100,
-          caption: '50 Boys + 50 Girls',
+          value: totalSeats,
+          caption: `${availableSeats} available`,
           color: 'neutral',
         },
       ];
     } else {
       // Student view
-      const studentData = members.find(m => m.id === user?.id) || user;
+      const studentData = currentStudent || user;
       return [
         {
           label: 'Your Seating Side',
-          value: studentData?.side || 'BOYS',
+          value: studentData?.gender || user?.side || 'BOYS',
           caption: 'Allocated side',
           color: 'primary',
         },
@@ -73,38 +118,44 @@ export default function Dashboard() {
         },
         {
           label: 'Status',
-          value: memberStatus(studentData?.status || 'Active'),
+          value: memberStatus(studentData?.subscriptionStatus || 'Active'),
           caption: 'Current status',
           color: 'neutral',
         },
         {
           label: 'Subscription',
-          value: '₹500',
+          value: `₹${Number(studentData?.monthlyFee || 0).toLocaleString('en-IN')}`,
           caption: 'Monthly fee',
           color: 'neutral',
         },
       ];
     }
-  }, [members, isAdmin, user]);
+  }, [students, seats, isAdmin, user, currentStudent]);
 
   const activeMembersList = isAdmin
-    ? members
-        .filter(m => m.status === 'Active')
-        .sort((a, b) => new Date(b.membershipDate) - new Date(a.membershipDate))
-        .slice(0, 5)
-    : members.filter(m => m.id === user?.id).slice(0, 1);
+    ? students
+        .filter(m => m.subscriptionStatus === 'Active')
+        .sort((a, b) => new Date(b.enrollmentDate || 0) - new Date(a.enrollmentDate || 0))
+        .slice(0, 2)
+    : (currentStudent ? [currentStudent] : []);
 
   return (
     <div className="dashboard-container">
       <section className="dashboard-hero">
         <div>
           {/* <p className="eyebrow">System Overview</p> */}
-          <h1>{`Hi, ${user.name}`}</h1>
+          <h1>{`Hi, ${user?.name || 'User'}`}</h1>
           <p className="hero-copy">
             {isAdmin
               ? 'Welcome back! Here’s a quick overview of the library’s current status and recent member activity.'
               : 'View your seat information and booking details.'}
           </p>
+          {isLoading && <p className="hero-copy">Loading dashboard data...</p>}
+          {loadError && (
+            <p className="hero-copy">
+              {loadError} <button className="btn btn-primary" onClick={fetchDashboardData}>Retry</button>
+            </p>
+          )}
         </div>
       </section>
 
@@ -134,11 +185,11 @@ export default function Dashboard() {
                   <div className="loan-info">
                     <strong>{member.name}</strong>
                     <p>{member.email}</p>
-                    <small>{member.id}</small>
+                    <small>{member.id || member.userCode || member.studentId}</small>
                   </div>
                   <div className="loan-status">
-                    <span className={`badge ${getMemberStatus(member.status)}`}>
-                      {member.status}
+                    <span className={`badge ${getMemberStatus(member.subscriptionStatus || 'Active')}`}>
+                      {member.subscriptionStatus || 'Active'}
                     </span>
                   </div>
                 </div>
@@ -162,38 +213,38 @@ export default function Dashboard() {
               <>
                 <div className="quick-stat">
                   <span>Total Students</span>
-                  <strong>{members.length}</strong>
+                  <strong>{students.length}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Active Students</span>
-                  <strong>{members.filter(m => m.status === 'Active').length}</strong>
+                  <strong>{students.filter(m => m.subscriptionStatus === 'Active').length}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Total Seats</span>
-                  <strong>100</strong>
+                  <strong>{seats.length}</strong>
                 </div>
                 <div className="quick-stat">
-                  <span>Pending Review</span>
-                  <strong>{members.filter(m => m.status === 'Review').length}</strong>
+                  <span>Available Seats</span>
+                  <strong>{seats.filter(s => String(s.status || '').toUpperCase() === 'AVAILABLE').length}</strong>
                 </div>
               </>
             ) : (
               <>
                 <div className="quick-stat">
                   <span>Your Seat</span>
-                  <strong>{user?.seatNumber || 'B-00'}</strong>
+                  <strong>{currentStudent?.seatNumber || user?.seatNumber || '-'}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Monthly Fee</span>
-                  <strong>₹8,500</strong>
+                  <strong>₹{Number(currentStudent?.monthlyFee || 0).toLocaleString('en-IN')}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Status</span>
-                  <strong>{user?.status || 'Active'}</strong>
+                  <strong>{currentStudent?.subscriptionStatus || 'Active'}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Enrollment</span>
-                  <strong>{user?.enrollment || '2026-01-10'}</strong>
+                  <strong>{currentStudent?.enrollmentDate || user?.enrollment || '-'}</strong>
                 </div>
               </>
             )}
