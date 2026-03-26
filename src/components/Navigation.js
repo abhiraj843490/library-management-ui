@@ -49,6 +49,11 @@ export default function Navigation() {
               </li>
               <li>
                 <Link to="/study-space-reports" className={`nav-link ${isActive('/study-space-reports')}`}>
+                  Space Reports
+                </Link>
+              </li>
+              <li>
+                <Link to="/study-reports" className={`nav-link ${isActive('/study-reports')}`}>
                   Reports
                 </Link>
               </li>

@@ -14,6 +14,7 @@ import Students from './pages/Students';
 import ViewSeats from './pages/ViewSeats';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
+import Reports from './pages/Reports';
 
 // Create Library Context
 const LibraryContext = createContext();
@@ -168,6 +169,14 @@ function AppContent() {
             element={
               <ProtectedRoute requiredRole="STUDENT">
                 <ViewSeats />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/study-reports"
+            element={
+              <ProtectedRoute>
+                <Reports />
               </ProtectedRoute>
             }
           />
