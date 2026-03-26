@@ -309,6 +309,7 @@ const Students = () => {
             {!isLoading && !loadError && students.map(student => {
               const rowId = student.studentId ?? student.id;
               const isUpdatingRow = String(updatingStudentId) === String(rowId);
+              const isInactiveRow = student.active === false || String(student.subscriptionStatus).toLowerCase() === 'inactive';
 
               return (
               <div key={rowId || student.email} className="student-card">
@@ -357,7 +358,7 @@ const Students = () => {
                     <button 
                       className="btn btn-primary"
                       onClick={() => handleProcessPayment(rowId)}
-                      disabled={isUpdatingRow}
+                      disabled={isInactiveRow || isUpdatingRow}
                     >
                       💳 Process Payment
                     </button>
@@ -377,21 +378,21 @@ const Students = () => {
                     <button 
                       className="btn btn-success"
                       onClick={() => handleCheckIn(rowId)}
-                      disabled={Boolean(student.currentCheckOut) || (student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
+                      disabled={isInactiveRow || Boolean(student.currentCheckOut) || (student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
                     >
                       ✅ Check-In
                     </button>
                     <button 
                       className="btn btn-warning"
                       onClick={() => handleCheckOut(rowId)}
-                      disabled={!student.currentCheckIn || Boolean(student.currentCheckOut) || isUpdatingRow}
+                      disabled={isInactiveRow || !student.currentCheckIn || Boolean(student.currentCheckOut) || isUpdatingRow}
                     >
                       ⏹️ Check-Out
                     </button>
                     <button 
                       className="btn btn-danger"
                       onClick={() => handleRemoveStudent(rowId)}
-                      disabled={isUpdatingRow}
+                      disabled={isInactiveRow || isUpdatingRow}
                     >
                       🗑️ Remove
                     </button>
@@ -502,7 +503,7 @@ const Students = () => {
           <div className="seats-grid">
             {Object.entries(availableSeats).map(([side, sections]) => (
               <div key={side} className="side-section">
-                <h3>{side === 'BOYS' ? '👦' : '👧'} {side} Side</h3>
+                <h3>{side === 'BOYS' ? '👦' : '👧'} {side} </h3>
                 {Object.entries(sections).map(([section, seats]) => (
                   <div key={section} className="section-block">
                     <h4>{section} Section</h4>
