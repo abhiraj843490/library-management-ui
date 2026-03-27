@@ -48,9 +48,20 @@ const ViewSeats = () => {
     loadSeats();
   }, []);
 
-  // Get only the student's side
-  const studentSide = String(user?.gender || '').toUpperCase().startsWith('GIRL') ? 'GIRLS' : 'BOYS';
-  const availableSeats = seatsData[studentSide];
+  const resolveStudentSide = () => {
+    const gender = String(user?.gender || '').toUpperCase();
+    if (gender.startsWith('GIRL')) return 'GIRLS';
+    if (gender.startsWith('BOY')) return 'BOYS';
+
+    const seatNumber = String(user?.seatNumber || '').toUpperCase();
+    if (seatNumber.startsWith('G-')) return 'GIRLS';
+    if (seatNumber.startsWith('B-')) return 'BOYS';
+    return null;
+  };
+
+  // Show only the logged-in student's side
+  const studentSide = resolveStudentSide();
+  const availableSeats = studentSide ? seatsData[studentSide] : { Regular: [], Silent: [] };
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -73,16 +84,21 @@ const ViewSeats = () => {
       totalSeats,
       availableCount,
       occupiedCount,
-      occupancyRate: Math.round((occupiedCount / totalSeats) * 100),
+      occupancyRate: totalSeats > 0 ? Math.round((occupiedCount / totalSeats) * 100) : 0,
     };
   }, [availableSeats]);
 
   return (
     <div className="view-seats-container">
       <div className="page-header">
-        <h1>💺 {studentSide === 'BOYS' ? '👦' : '👧'} {studentSide} Side - Seating Chart</h1>
+        <h1>💺 {studentSide === 'BOYS' ? '👦' : '👧'} {(studentSide || 'STUDENT')} Side - Seating Chart</h1>
         <p>View available seats in your seating section</p>
       </div>
+      {!studentSide && (
+        <div className="empty-state">
+          <p>Unable to determine your side from profile. Please logout and login again.</p>
+        </div>
+      )}
 
       {/* Statistics */}
       <div className="stats-section">

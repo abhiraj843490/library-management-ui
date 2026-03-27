@@ -175,7 +175,7 @@ function AppContent() {
           <Route
             path="/study-reports"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requiredRole="ADMIN">
                 <Reports />
               </ProtectedRoute>
             }
@@ -183,7 +183,7 @@ function AppContent() {
           <Route
             path="/study-space-reports"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute requiredRole="ADMIN">
                 <StudySpaceReports />
               </ProtectedRoute>
             }

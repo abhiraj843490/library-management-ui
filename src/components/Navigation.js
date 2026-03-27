@@ -75,11 +75,11 @@ export default function Navigation() {
                   Available Spaces
                 </Link>
               </li>
-              <li>
+              {/* <li>
                 <Link to="/study-space-reports" className={`nav-link ${isActive('/study-space-reports')}`}>
                   Analytics
                 </Link>
-              </li>
+              </li> */}
             </>
           )}
         </ul>
