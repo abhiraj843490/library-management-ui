@@ -38,6 +38,8 @@ const request = async (url, options = {}, fallbackMessage = 'Request failed') =>
 };
 
 export const getStudentsApi = () => request(STUDENTS_ENDPOINT, { method: 'GET' }, 'Failed to fetch students');
+export const getStudentByIdApi = (studentId) =>
+  request(`${STUDENTS_ENDPOINT}/${studentId}`, { method: 'GET' }, 'Failed to fetch student details');
 
 export const createStudentApi = (payload) =>
   request(

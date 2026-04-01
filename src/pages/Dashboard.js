@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { extractStudentsFromResponse, normalizeStudent } from '../interfaces/studentResponse';
-import { getSeatsApi, getStudentsApi } from '../services/studentApi';
+import { getSeatsApi, getStudentByIdApi, getStudentsApi } from '../services/studentApi';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -19,15 +19,39 @@ export default function Dashboard() {
     return [];
   };
 
+  const extractSingleStudentFromResponse = (response) => {
+    if (!response) return null;
+    if (Array.isArray(response)) return response[0] || null;
+    if (response?.data && !Array.isArray(response.data)) return response.data;
+    return response;
+  };
+
+  const resolveStudentIdentifier = () => {
+    const candidates = [user?.studentId, user?.id, user?.userCode];
+    return candidates.find(value => value !== undefined && value !== null && String(value).trim() !== '');
+  };
+
   const fetchDashboardData = useCallback(async () => {
     setIsLoading(true);
     setLoadError('');
     try {
-      const [studentsResult, seatsResult] = await Promise.all([getStudentsApi(), getSeatsApi()]);
-      const studentsData = extractStudentsFromResponse(studentsResult).map(normalizeStudent);
-      const seatsData = extractSeatsFromResponse(seatsResult);
-      setStudents(studentsData);
-      setSeats(seatsData);
+      if (isAdmin) {
+        const [studentsResult, seatsResult] = await Promise.all([getStudentsApi(), getSeatsApi()]);
+        const studentsData = extractStudentsFromResponse(studentsResult).map(normalizeStudent);
+        const seatsData = extractSeatsFromResponse(seatsResult);
+        setStudents(studentsData);
+        setSeats(seatsData);
+      } else {
+        const studentId = resolveStudentIdentifier();
+        if (!studentId) {
+          throw new Error('Unable to resolve logged-in student id');
+        }
+
+        const studentResult = await getStudentByIdApi(studentId);
+        const singleStudent = extractSingleStudentFromResponse(studentResult);
+        setStudents(singleStudent ? [normalizeStudent(singleStudent)] : []);
+        setSeats([]);
+      }
     } catch (error) {
       setLoadError(error.message || 'Unable to load dashboard data');
       setStudents([]);
@@ -35,7 +59,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isAdmin, user?.studentId, user?.id, user?.userCode]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -106,7 +130,7 @@ export default function Dashboard() {
       return [
         {
           label: 'Your Seating Side',
-          value: studentData?.gender || user?.side || 'BOYS',
+          value: user?.gender,
           caption: 'Allocated side',
           color: 'primary',
         },
@@ -174,7 +198,7 @@ export default function Dashboard() {
           <div className="panel-head compact">
             <div>
               <p className="panel-label">Recently</p>
-              <h2>{isAdmin ? 'Active Students' : 'My Information'}</h2>
+              <h2>{isAdmin ? 'Most Recent Enrolled Students' : 'My Information'}</h2>
             </div>
           </div>
 
@@ -231,19 +255,19 @@ export default function Dashboard() {
             ) : (
               <>
                 <div className="quick-stat">
-                  <span>Your Seat</span>
-                  <strong>{currentStudent?.seatNumber || user?.seatNumber || '-'}</strong>
+                  <span>Attendance Hours</span>
+                  <strong>{currentStudent?.attendanceHours || user?.attendanceHours || '0 hrs'}</strong>
                 </div>
                 <div className="quick-stat">
-                  <span>Monthly Fee</span>
-                  <strong>₹{Number(currentStudent?.monthlyFee || 0).toLocaleString('en-IN')}</strong>
+                  <span>Fee Status</span>
+                  <strong>{currentStudent?.feeStatus || user?.feeStatus || 'Pending'}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Status</span>
-                  <strong>{currentStudent?.subscriptionStatus || 'Active'}</strong>
+                  <strong>{currentStudent?.checkedIn || (currentStudent?.currentCheckIn && !currentStudent?.currentCheckOut) ? 'Present' : 'Absent'}</strong>
                 </div>
                 <div className="quick-stat">
-                  <span>Enrollment</span>
+                  <span>Enrollment Date</span>
                   <strong>{currentStudent?.enrollmentDate || user?.enrollment || '-'}</strong>
                 </div>
               </>
