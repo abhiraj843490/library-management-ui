@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { extractStudentsFromResponse, normalizeStudent } from '../interfaces/studentResponse';
-import { getSeatsApi, getStudentByIdApi, getStudentsApi } from '../services/studentApi';
+import { extractStudentsFromResponse, normalizeStudent, toApiStudentUpdatePayload } from '../interfaces/studentResponse';
+import { getSeatsApi, getStudentByIdApi, getStudentsApi, updateStudentApi } from '../services/studentApi';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [seats, setSeats] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [isAttendanceUpdating, setIsAttendanceUpdating] = useState(false);
 
   const extractSeatsFromResponse = (response) => {
     if (Array.isArray(response)) return response;
@@ -88,6 +89,56 @@ export default function Dashboard() {
       (user?.id && String(s.studentId) === String(user.id))
     ) || null;
   }, [students, user]);
+
+  const isCurrentStudentInactive = useMemo(() => {
+    return currentStudent?.active === false || String(currentStudent?.subscriptionStatus || '').toLowerCase() === 'inactive';
+  }, [currentStudent]);
+
+  const isCheckedInNow = useMemo(() => {
+    return Boolean(currentStudent?.checkedIn || (currentStudent?.currentCheckIn && !currentStudent?.currentCheckOut));
+  }, [currentStudent]);
+
+  const applyUpdatedStudent = (updatedStudent) => {
+    if (!updatedStudent) return;
+    const normalized = normalizeStudent(updatedStudent);
+    const incomingId = normalized.studentId ?? normalized.id;
+
+    setStudents((prev) => {
+      const hasMatch = prev.some((s) => String(s.studentId ?? s.id) === String(incomingId));
+      if (!hasMatch) return [normalized];
+      return prev.map((s) => {
+        const rowId = s.studentId ?? s.id;
+        if (String(rowId) !== String(incomingId)) return s;
+        return { ...s, ...normalized };
+      });
+    });
+  };
+
+  const handleStudentAttendance = useCallback(async (action) => {
+    if (isAdmin || !currentStudent) return;
+    const apiId = currentStudent?.studentId ?? currentStudent?.id ?? user?.studentId ?? user?.id ?? user?.userCode;
+    if (!apiId) {
+      setLoadError('Unable to resolve logged-in student id');
+      return;
+    }
+
+    const now = new Date().toLocaleString('en-IN');
+    const updates = action === 'checkin'
+      ? { checkedIn: true, currentCheckIn: now, currentCheckOut: null }
+      : { checkedIn: false, currentCheckOut: now };
+
+    setIsAttendanceUpdating(true);
+    setLoadError('');
+    try {
+      const result = await updateStudentApi(apiId, toApiStudentUpdatePayload(currentStudent, updates));
+      const updated = result?.data && !Array.isArray(result.data) ? result.data : result;
+      applyUpdatedStudent(updated);
+    } catch (error) {
+      setLoadError(error.message || 'Unable to update attendance');
+    } finally {
+      setIsAttendanceUpdating(false);
+    }
+  }, [isAdmin, currentStudent, user?.studentId, user?.id, user?.userCode]);
 
   const stats = useMemo(() => {
     const totalSeats = seats.length;
@@ -222,6 +273,33 @@ export default function Dashboard() {
               <div className="empty-state">No members found</div>
             )}
           </div>
+
+          {!isAdmin && currentStudent && (
+            <div className="student-attendance-card">
+              <p className="panel-label">Attendance</p>
+              <div className="attendance-meta">
+                {currentStudent?.currentCheckIn && <span>Check-In: {currentStudent.currentCheckIn}</span>}
+                {currentStudent?.currentCheckOut && <span>Check-Out: {currentStudent.currentCheckOut}</span>}
+                {!currentStudent?.currentCheckIn && <span>No attendance recorded yet.</span>}
+              </div>
+              <div className="attendance-actions">
+                <button
+                  className="btn btn-success"
+                  onClick={() => handleStudentAttendance('checkin')}
+                  disabled={isCurrentStudentInactive || Boolean(currentStudent?.currentCheckOut) || isCheckedInNow || isAttendanceUpdating}
+                >
+                  Check-In
+                </button>
+                <button
+                  className="btn btn-warning"
+                  onClick={() => handleStudentAttendance('checkout')}
+                  disabled={isCurrentStudentInactive || !isCheckedInNow || Boolean(currentStudent?.currentCheckOut) || isAttendanceUpdating}
+                >
+                  Check-Out
+                </button>
+              </div>
+            </div>
+          )}
         </article>
 
         <article className="panel">
@@ -256,7 +334,7 @@ export default function Dashboard() {
               <>
                 <div className="quick-stat">
                   <span>Attendance Hours</span>
-                  <strong>{currentStudent?.attendanceHours || user?.attendanceHours || '0 hrs'}</strong>
+                  <strong>{currentStudent?.currentCheckIn || user?.attendanceHours || '0 hrs'}</strong>
                 </div>
                 <div className="quick-stat">
                   <span>Fee Status</span>
