@@ -499,14 +499,11 @@ export default function Dashboard() {
                 )} */}
 
                 {typeof totalAttendanceMinutes === "number" && (
-                  <span>
-                    Total Attendance:{" "}
-                    {toDurationString(totalAttendanceMinutes * 60)}
-                  </span>
+                  <span>Checked Out</span>
                 )}
 
                 {!currentStudent?.currentCheckIn && !runningCheckInTime && (
-                  <span>No attendance recorded yet.</span>
+                  <span>Yet to check in.</span>
                 )}
               </div>
               <div className="attendance-actions">
@@ -587,6 +584,9 @@ export default function Dashboard() {
                     <span className="live-timer">
                       <strong>{sessionDurationDisplay}</strong>
                     </span>
+                  )}
+                  {!runningCheckInTime && lastSessionSeconds === 0 && (
+                    <strong>{totalAttendanceDisplay}</strong>
                   )}
                 </div>
                 <div className="quick-stat">

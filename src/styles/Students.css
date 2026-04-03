@@ -286,6 +286,30 @@
   color: #856404;
 }
 
+/* Attendance Section */
+
+.attendance-info {
+  display: flex;
+  align-items: center;
+}
+
+.attendance-status {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.attendance-status.present {
+  background: #d4edda;
+  color: #155724;
+}
+
+.attendance-status.absent {
+  background: #f8d7da;
+  color: #721c24;
+}
+
 /* Check-in Section */
 .checkin-section {
   display: flex;
