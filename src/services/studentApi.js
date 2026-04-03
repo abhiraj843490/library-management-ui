@@ -61,4 +61,22 @@ export const updateStudentApi = (studentId, payload) =>
     'Update failed'
   );
 
+export const checkInStudentApi = (studentId) =>
+  request(
+    `${STUDENTS_ENDPOINT}/${studentId}/check-in`,
+    {
+      method: 'POST',
+    },
+    'Check-in failed'
+  );
+
+export const checkOutStudentApi = (studentId) =>
+  request(
+    `${STUDENTS_ENDPOINT}/${studentId}/check-out`,
+    {
+      method: 'POST',
+    },
+    'Check-out failed'
+  );
+
 export const getSeatsApi = () => request(SEATS_ENDPOINT, { method: 'GET' }, 'Failed to fetch seats');
