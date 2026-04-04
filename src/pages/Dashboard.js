@@ -5,12 +5,11 @@ import {
   normalizeStudent,
 } from "../interfaces/studentResponse";
 import {
-  checkInStudentApi,
-  checkOutStudentApi,
   getSeatsApi,
   getStudentByIdApi,
   getStudentsApi,
 } from "../services/studentApi";
+import useAttendance from "../hooks/useAttendance";
 import "./Dashboard.css";
 
 export default function Dashboard() {
@@ -20,11 +19,6 @@ export default function Dashboard() {
   const [seats, setSeats] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [isAttendanceUpdating, setIsAttendanceUpdating] = useState(false);
-  const [runningCheckInTime, setRunningCheckInTime] = useState(null);
-  const [elapsedSessionSeconds, setElapsedSessionSeconds] = useState(0);
-  const [lastSessionSeconds, setLastSessionSeconds] = useState(0);
-  const [totalAttendanceMinutes, setTotalAttendanceMinutes] = useState(null);
 
   const extractSeatsFromResponse = (response) => {
     if (Array.isArray(response)) return response;
@@ -123,215 +117,39 @@ export default function Dashboard() {
         "inactive"
     );
   }, [currentStudent]);
+  //   const isCheckedInNow = useMemo(() => {
+  //   if (!currentStudent) return false;
+  //   if (typeof currentStudent.checkedIn === "boolean")
+  //     return currentStudent.checkedIn;
+  //   return Boolean(
+  //     currentStudent.currentCheckIn && !currentStudent.currentCheckOut,
+  //   );
+  // }, [currentStudent]);
 
-  const isCheckedInNow = useMemo(() => {
-    if (!currentStudent) return false;
-    if (typeof currentStudent.checkedIn === "boolean")
-      return currentStudent.checkedIn;
-    return Boolean(
-      currentStudent.currentCheckIn && !currentStudent.currentCheckOut,
-    );
-  }, [currentStudent]);
+  const attendance = useAttendance({
+    user,
+    currentStudent,
+    isAdmin,
+    setStudents,
+    setLoadError,
+  });
 
-  const parseAttendanceDate = useCallback((value) => {
-    if (!value) return null;
-    if (value instanceof Date)
-      return Number.isNaN(value.getTime()) ? null : value;
-    const normalized = String(value).trim().replace(" ", "T");
-    const safeValue = normalized.replace(
-      /(\.\d{3})\d+(?=(Z|[+-]\d{2}:\d{2})?$)/,
-      "$1",
-    );
-    const parsed = new Date(safeValue);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }, []);
-
-  const toDurationString = (secondsValue) => {
-    const totalSeconds = Math.max(0, Math.floor(Number(secondsValue) || 0));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    const pad = (v) => String(v).padStart(2, "0");
-    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-  };
-
-  const applyAttendanceSnapshot = useCallback(
-    (studentId, attendanceData = {}, action) => {
-      const checkInValue =
-        attendanceData.checkIn || attendanceData.currentCheckIn || null;
-      const checkOutValueRaw =
-        attendanceData.checkOut || attendanceData.currentCheckOut || null;
-      const checkOutValue =
-        action === "checkout"
-          ? checkOutValueRaw || new Date().toISOString()
-          : checkOutValueRaw;
-
-      const parsedCheckIn = parseAttendanceDate(checkInValue);
-      const parsedCheckOut = parseAttendanceDate(checkOutValue);
-
-      if (action === "checkin") {
-        setRunningCheckInTime(parsedCheckIn);
-        setElapsedSessionSeconds(0);
-        setLastSessionSeconds(0);
-      } else if (action === "checkout") {
-        setRunningCheckInTime(null);
-        // Prioritize backend's sessionMinutes over calculated duration
-        if (Number.isFinite(Number(attendanceData.sessionMinutes))) {
-          setLastSessionSeconds(
-            Math.max(0, Math.floor(Number(attendanceData.sessionMinutes) * 60)),
-          );
-        } else if (parsedCheckIn && parsedCheckOut) {
-          setLastSessionSeconds(
-            Math.max(
-              0,
-              Math.floor(
-                (parsedCheckOut.getTime() - parsedCheckIn.getTime()) / 1000,
-              ),
-            ),
-          );
-        } else {
-          setLastSessionSeconds(0);
-        }
-        if (typeof attendanceData.totalAttendanceMinutes === "number") {
-          setTotalAttendanceMinutes(attendanceData.totalAttendanceMinutes);
-        }
-      }
-
-      setStudents((prev) =>
-        prev.map((studentRow) => {
-          const rowId = studentRow.studentId ?? studentRow.id;
-          if (String(rowId) !== String(studentId)) return studentRow;
-
-          return {
-            ...studentRow,
-            checkedIn: action === "checkin",
-            currentCheckIn: checkInValue || studentRow.currentCheckIn || null,
-            currentCheckOut:
-              action === "checkin"
-                ? null
-                : checkOutValue || studentRow.currentCheckOut || null,
-          };
-        }),
-      );
-    },
-    [parseAttendanceDate],
-  );
-
-  const handleStudentAttendance = useCallback(
-    async (action) => {
-      if (isAdmin || !currentStudent) return;
-      const apiId =
-        currentStudent?.studentId ??
-        currentStudent?.id ??
-        user?.studentId ??
-        user?.id ??
-        user?.userCode;
-      if (!apiId) {
-        setLoadError("Unable to resolve logged-in student id");
-        return;
-      }
-
-      setIsAttendanceUpdating(true);
-      setLoadError("");
-      try {
-        const result =
-          action === "checkin"
-            ? await checkInStudentApi(apiId)
-            : await checkOutStudentApi(apiId);
-        const attendancePayload =
-          result?.data && !Array.isArray(result.data) ? result.data : result;
-        applyAttendanceSnapshot(apiId, attendancePayload, action);
-      } catch (error) {
-        setLoadError(error.message || "Unable to update attendance");
-      } finally {
-        setIsAttendanceUpdating(false);
-      }
-    },
-    [
-      isAdmin,
-      currentStudent,
-      user?.studentId,
-      user?.id,
-      user?.userCode,
-      applyAttendanceSnapshot,
-    ],
-  );
-
-  useEffect(() => {
-    if (!currentStudent) {
-      setRunningCheckInTime(null);
-      setElapsedSessionSeconds(0);
-      setLastSessionSeconds(0);
-      return;
-    }
-
-    const parsedCheckIn = parseAttendanceDate(currentStudent.currentCheckIn);
-    const parsedCheckOut = parseAttendanceDate(currentStudent.currentCheckOut);
-
-    // Check if actively checked in - use multiple signals for reliability
-    const hasCheckInNoCheckOut = parsedCheckIn && !parsedCheckOut;
-    const explicitlyCheckedIn = Boolean(currentStudent.checkedIn);
-    const hasCompletedSession = parsedCheckIn && parsedCheckOut;
-    const activelyCheckedIn =
-      (explicitlyCheckedIn || hasCheckInNoCheckOut) && !hasCompletedSession;
-
-    if (activelyCheckedIn && parsedCheckIn && !parsedCheckOut) {
-      setRunningCheckInTime(parsedCheckIn);
-      setLastSessionSeconds(0);
-      return;
-    }
-
-    // Not actively checked in - calculate final session duration if available
-    setRunningCheckInTime(null);
-    if (hasCompletedSession) {
-      const sessionSeconds = Math.max(
-        0,
-        Math.floor((parsedCheckOut.getTime() - parsedCheckIn.getTime()) / 1000),
-      );
-      setLastSessionSeconds(sessionSeconds);
-    } else {
-      setLastSessionSeconds(0);
-    }
-  }, [currentStudent, parseAttendanceDate]);
-
-  useEffect(() => {
-    if (!runningCheckInTime) {
-      setElapsedSessionSeconds(0);
-      return undefined;
-    }
-
-    const tick = () => {
-      const seconds = Math.max(
-        0,
-        Math.floor((Date.now() - runningCheckInTime.getTime()) / 1000),
-      );
-      setElapsedSessionSeconds(seconds);
-    };
-
-    tick();
-    const intervalId = window.setInterval(tick, 1000);
-    return () => window.clearInterval(intervalId);
-  }, [runningCheckInTime]);
-
-  const sessionDurationDisplay = useMemo(() => {
-    if (runningCheckInTime) return toDurationString(elapsedSessionSeconds);
-    if (lastSessionSeconds > 0) return toDurationString(lastSessionSeconds);
-    return "00:00:00";
-  }, [runningCheckInTime, elapsedSessionSeconds, lastSessionSeconds]);
-
-  const totalAttendanceDisplay = useMemo(() => {
-    if (typeof totalAttendanceMinutes === "number") {
-      return toDurationString(totalAttendanceMinutes * 60);
-    }
-
-    const userValue = user?.attendanceHours;
-    if (typeof userValue === "string" && userValue.trim()) {
-      return userValue;
-    }
-
-    return "00:00:00";
-  }, [totalAttendanceMinutes, user?.attendanceHours]);
+  const {
+    isAttendanceUpdating,
+    runningCheckInTime,
+    lastSessionSeconds,
+    attendanceByDate,
+    calendarDays,
+    selectedMonth,
+    setSelectedMonth,
+    sessionDurationDisplay,
+    totalAttendanceDisplay,
+    hasCheckedOutToday,
+    isCheckedInNow,
+    canCheckInToday,
+    canCheckOutToday,
+    handleStudentAttendance,
+  } = attendance;
 
   const stats = useMemo(() => {
     const totalSeats = seats.length;
@@ -491,14 +309,8 @@ export default function Dashboard() {
             <div className="student-attendance-card">
               <p className="panel-label">Attendance</p>
               <div className="attendance-meta">
-                {/* {currentStudent?.currentCheckIn && (
-                  <span>Check-In: {currentStudent.currentCheckIn}</span>
-                )}
-                {currentStudent?.currentCheckOut && (
-                  <span>Check-Out: {currentStudent.currentCheckOut}</span>
-                )} */}
-
-                {typeof totalAttendanceMinutes === "number" && (
+                
+                {hasCheckedOutToday && (
                   <span>Checked Out</span>
                 )}
 
@@ -513,7 +325,7 @@ export default function Dashboard() {
                   disabled={
                     isCurrentStudentInactive ||
                     Boolean(currentStudent?.currentCheckOut) ||
-                    isCheckedInNow ||
+                    !canCheckInToday ||
                     isAttendanceUpdating
                   }
                 >
@@ -524,13 +336,48 @@ export default function Dashboard() {
                   onClick={() => handleStudentAttendance("checkout")}
                   disabled={
                     isCurrentStudentInactive ||
-                    !isCheckedInNow ||
+                    !canCheckOutToday ||
                     Boolean(currentStudent?.currentCheckOut) ||
                     isAttendanceUpdating
                   }
                 >
                   Check-Out
                 </button>
+              </div>
+              <div className="attendance-calendar">
+                <div className="attendance-calendar-head">
+                  <strong>Attendance Calendar</strong>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                  />
+                </div>
+                {/* <div className="attendance-legend">
+                  <span className="legend-item present">P Present</span>
+                  <span className="legend-item absent">A Absent</span>
+                  <span className="legend-item unknown">- No record</span>
+                </div> */}
+                <div className="attendance-calendar-grid">
+                  {calendarDays.map(({ day, dayKey, inFuture }) => {
+                    const entry = attendanceByDate.get(dayKey);
+                    const normalizedStatus = String(entry?.status || "").toUpperCase();
+                    const isPresent = normalizedStatus === "PRESENT";
+                    const isAbsent = normalizedStatus === "ABSENT";
+                    const badge = isPresent ? "P" : isAbsent ? "A" : "-";
+
+                    return (
+                      <div
+                        key={dayKey}
+                        className={`calendar-day ${isPresent ? "present" : ""} ${isAbsent ? "absent" : ""} ${inFuture ? "future" : ""}`}
+                        title={dayKey}
+                      >
+                        <span>{day}</span>
+                        <strong>{inFuture ? "" : badge}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -577,35 +424,63 @@ export default function Dashboard() {
                 </div>
               </>
             ) : (
-              <>
-                <div className="quick-stat">
-                  <span>Attendance Hours</span>
-                  {(runningCheckInTime || lastSessionSeconds > 0) && (
-                    <span className="live-timer">
-                      <strong>{sessionDurationDisplay}</strong>
-                    </span>
-                  )}
-                  {!runningCheckInTime && lastSessionSeconds === 0 && (
-                    <strong>{totalAttendanceDisplay}</strong>
-                  )}
+            <>
+              <div className="quick-stat">
+                <span>Attendance Hours</span>
+                <div className="attendance-info">
+                  <span className="attendance-status info">
+                    {(runningCheckInTime || lastSessionSeconds > 0)
+                      ? sessionDurationDisplay
+                      : totalAttendanceDisplay}
+                  </span>
                 </div>
-                <div className="quick-stat">
-                  <span>Fee Status</span>
-                  <strong>
+              </div>
+
+              <div className="quick-stat">
+                <span>Fee Status</span>
+                <div className="attendance-info">
+                  <span
+                    className={`attendance-status ${
+                      (currentStudent?.feeStatus || user?.feeStatus) === "Paid"
+                        ? "present"
+                        : "absent"
+                    }`}
+                  >
                     {currentStudent?.feeStatus || user?.feeStatus || "Pending"}
-                  </strong>
+                  </span>
                 </div>
-                <div className="quick-stat">
-                  <span>Status</span>
-                  <strong>{isCheckedInNow ? "Present" : "Absent"}</strong>
+              </div>
+
+              <div className="quick-stat">
+                <span>Attendance Status</span>
+                <div className="attendance-info">
+                  <span
+                    className={`attendance-status ${
+                      isCheckedInNow
+                        ? "present"
+                        : hasCheckedOutToday
+                        ? "checked-out"
+                        : "absent"
+                    }`}
+                  >
+                    {isCheckedInNow
+                      ? "Present"
+                      : hasCheckedOutToday
+                      ? "Checked Out"
+                      : "Yet to Check In"}
+                  </span>
                 </div>
-                <div className="quick-stat">
-                  <span>Enrollment Date</span>
-                  <strong>
+              </div>
+
+              <div className="quick-stat">
+                <span>Enrollment Date</span>
+                <div className="attendance-info">
+                  <span className="attendance-status neutral">
                     {currentStudent?.enrollmentDate || user?.enrollment || "-"}
-                  </strong>
+                  </span>
                 </div>
-              </>
+              </div>              
+            </>
             )}
           </div>
         </article>

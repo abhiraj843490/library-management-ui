@@ -79,4 +79,13 @@ export const checkOutStudentApi = (studentId) =>
     'Check-out failed'
   );
 
+export const getStudentAttendanceCalendarApi = (studentId, month) => {
+  const query = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request(
+    `${STUDENTS_ENDPOINT}/${studentId}/attendance${query}`,
+    { method: 'GET' },
+    'Failed to fetch attendance calendar'
+  );
+};
+
 export const getSeatsApi = () => request(SEATS_ENDPOINT, { method: 'GET' }, 'Failed to fetch seats');

@@ -74,6 +74,14 @@ export const normalizeStudent = (student = {}) => ({
   monthlyFee: Number(student.monthlyFee || 0),
   feeStatus: toUiStatus(student.feeStatus, 'Pending'),
   active: student.active !== undefined ? Boolean(student.active) : true,
+  lastSessionMinutes:
+    student.lastSessionMinutes !== undefined && student.lastSessionMinutes !== null
+      ? Number(student.lastSessionMinutes)
+      : null,
+  totalAttendanceMinutes:
+    student.totalAttendanceMinutes !== undefined && student.totalAttendanceMinutes !== null
+      ? Number(student.totalAttendanceMinutes)
+      : null,
 });
 
 
