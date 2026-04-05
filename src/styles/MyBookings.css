@@ -138,22 +138,22 @@
   white-space: nowrap;
 }
 
-.badge-confirmed {
+.status-badge.badge-confirmed {
   background: #e3f2fd;
   color: #1976d2;
 }
 
-.badge-completed {
+.status-badge.badge-completed {
   background: #e8f5e9;
   color: #388e3c;
 }
 
-.badge-cancelled {
+.status-badge.badge-cancelled {
   background: #ffebee;
   color: #d32f2f;
 }
 
-.badge-no-show {
+.status-badge.badge-no-show {
   background: #fff3e0;
   color: #f57c00;
 }
