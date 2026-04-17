@@ -188,19 +188,19 @@ const Students = () => {
     updateStudentStatus(targetStudent, { feeStatus: 'Paid' }, 'Payment status updated');
   };
 
-  const handleCheckIn = (studentId) => {
-    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
-    if (!targetStudent) return;
-    const now = new Date().toLocaleString('en-IN');
-    updateStudentStatus(targetStudent, { checkedIn: true, currentCheckIn: now, currentCheckOut: null }, 'Check-in updated');
-  };
+  // const handleCheckIn = (studentId) => {
+  //   const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+  //   if (!targetStudent) return;
+  //   const now = new Date().toLocaleString('en-IN');
+  //   updateStudentStatus(targetStudent, { checkedIn: true, currentCheckIn: now, currentCheckOut: null }, 'Check-in updated');
+  // };
 
-  const handleCheckOut = (studentId) => {
-    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
-    if (!targetStudent) return;
-    const now = new Date().toLocaleString('en-IN');
-    updateStudentStatus(targetStudent, { checkedIn: false, currentCheckOut: now }, 'Check-out updated');
-  };
+  // const handleCheckOut = (studentId) => {
+  //   const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+  //   if (!targetStudent) return;
+  //   const now = new Date().toLocaleString('en-IN');
+  //   updateStudentStatus(targetStudent, { checkedIn: false, currentCheckOut: now }, 'Check-out updated');
+  // };
 
   const handleRemoveStudent = (studentId) => {
     const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));

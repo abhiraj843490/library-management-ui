@@ -314,7 +314,7 @@ export default function Dashboard() {
                   <span>Checked Out</span>
                 )}
 
-                {!currentStudent?.currentCheckIn && !runningCheckInTime && (
+                {!isCheckedInNow && !hasCheckedOutToday && (
                   <span>Yet to check in.</span>
                 )}
               </div>
@@ -324,7 +324,6 @@ export default function Dashboard() {
                   onClick={() => handleStudentAttendance("checkin")}
                   disabled={
                     isCurrentStudentInactive ||
-                    Boolean(currentStudent?.currentCheckOut) ||
                     !canCheckInToday ||
                     isAttendanceUpdating
                   }
@@ -337,7 +336,6 @@ export default function Dashboard() {
                   disabled={
                     isCurrentStudentInactive ||
                     !canCheckOutToday ||
-                    Boolean(currentStudent?.currentCheckOut) ||
                     isAttendanceUpdating
                   }
                 >

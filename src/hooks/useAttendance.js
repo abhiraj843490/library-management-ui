@@ -7,81 +7,45 @@ import {
 
 const parseAttendanceDate = (value) => {
   if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-
-  const normalized = String(value).trim().replace(" ", "T");
-  const safeValue = normalized.replace(
-    /(\.\d{3})\d+(?=(Z|[+-]\d{2}:\d{2})?$)/,
-    "$1",
-  );
-  const parsed = new Date(safeValue);
+  const parsed = new Date(String(value).replace(" ", "T"));
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const toLocalDateKey = (value) => {
-  const parsed = value instanceof Date ? value : parseAttendanceDate(value);
-  if (!parsed) return null;
-
-  const yyyy = parsed.getFullYear();
-  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-  const dd = String(parsed.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  const d = value instanceof Date ? value : parseAttendanceDate(value);
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-const toDurationString = (secondsValue) => {
-  const totalSeconds = Math.max(0, Math.floor(Number(secondsValue) || 0));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (v) => String(v).padStart(2, "0");
-  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+const toDurationString = (sec) => {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${h}:${m}:${ss}`;
 };
 
-const normalizeAttendanceEntries = (response) => {
+const normalizeAttendanceEntries = (res) => {
   const raw =
-    (Array.isArray(response) && response) ||
-    (Array.isArray(response?.data) && response.data) ||
-    (Array.isArray(response?.data?.content) && response.data.content) ||
-    (Array.isArray(response?.data?.records) && response.data.records) ||
+    (Array.isArray(res?.data) && res.data) ||
+    (Array.isArray(res?.data?.content) && res.data.content) ||
+    (Array.isArray(res?.data?.records) && res.data.records) ||
+    (Array.isArray(res) && res) ||
     [];
 
-  return raw
-    .map((entry) => {
-      const checkInValue = entry.checkIn || entry.currentCheckIn || null;
-      const checkOutValue = entry.checkOut || entry.currentCheckOut || null;
-      const day =
-        entry.date ||
-        entry.attendanceDate ||
-        entry.day ||
-        toLocalDateKey(checkInValue || checkOutValue);
-
-      if (!day) return null;
-
-      const statusText = String(entry.status || "").toUpperCase();
-      let status = "UNKNOWN";
-      if (statusText.includes("ABSENT")) status = "ABSENT";
-      else if (statusText.includes("PRESENT")) status = "PRESENT";
-      else if (checkInValue) status = "PRESENT";
-
-      return {
-        date: day,
-        status,
-        checkIn: checkInValue,
-        checkOut: checkOutValue,
-      };
-    })
-    .filter(Boolean);
+  return raw.map((e) => ({
+    date: e.date,
+    status: e.status,
+    checkIn: e.checkIn,
+    checkOut: e.checkOut,
+  }));
 };
 
-const extractStudentId = (currentStudent, user) => {
-  return (
-    currentStudent?.studentId ??
-    currentStudent?.id ??
-    user?.studentId ??
-    user?.id ??
-    user?.userCode
-  );
-};
+const extractStudentId = (currentStudent, user) =>
+  currentStudent?.studentId ||
+  currentStudent?.id ||
+  user?.studentId ||
+  user?.id;
 
 export default function useAttendance({
   user,
@@ -90,342 +54,208 @@ export default function useAttendance({
   setStudents,
   setLoadError,
 }) {
-  const [isAttendanceUpdating, setIsAttendanceUpdating] = useState(false);
+  const [attendanceCalendar, setAttendanceCalendar] = useState([]);
   const [runningCheckInTime, setRunningCheckInTime] = useState(null);
   const [elapsedSessionSeconds, setElapsedSessionSeconds] = useState(0);
   const [lastSessionSeconds, setLastSessionSeconds] = useState(0);
-  const [totalAttendanceMinutes, setTotalAttendanceMinutes] = useState(null);
-  const [attendanceCalendar, setAttendanceCalendar] = useState([]);
+  const [isAttendanceUpdating, setIsAttendanceUpdating] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  const todayDateKey = useMemo(
-    () => toLocalDateKey(new Date()),
-    [],
-  );
+  const todayKey = useMemo(() => toLocalDateKey(new Date()), []);
 
-  const parsedCurrentCheckIn = useMemo(
-    () => parseAttendanceDate(currentStudent?.currentCheckIn),
-    [currentStudent?.currentCheckIn],
-  );
+  const todayAttendance = useMemo(() => {
+    const byDate = attendanceCalendar.find((d) => d.date === todayKey);
+    if (byDate) return byDate;
 
-  const parsedCurrentCheckOut = useMemo(
-    () => parseAttendanceDate(currentStudent?.currentCheckOut),
-    [currentStudent?.currentCheckOut],
-  );
-
-  const hasCheckedInToday = useMemo(() => {
-    if (!parsedCurrentCheckIn) return false;
-    return toLocalDateKey(parsedCurrentCheckIn) === todayDateKey;
-  }, [parsedCurrentCheckIn, todayDateKey]);
-
-  const hasCheckedOutToday = useMemo(() => {
-    if (!parsedCurrentCheckOut) return false;
-    return toLocalDateKey(parsedCurrentCheckOut) === todayDateKey;
-  }, [parsedCurrentCheckOut, todayDateKey]);
-
-  const isCheckedInNow = useMemo(() => {
-    if (!currentStudent) return false;
     return (
-      hasCheckedInToday &&
-      !hasCheckedOutToday &&
-      Boolean(currentStudent.checkedIn || parsedCurrentCheckIn)
+      attendanceCalendar.find((d) => {
+        const ci = toLocalDateKey(d.checkIn);
+        const co = toLocalDateKey(d.checkOut);
+        return ci === todayKey || co === todayKey;
+      }) || null
     );
-  }, [currentStudent, hasCheckedInToday, hasCheckedOutToday, parsedCurrentCheckIn]);
+  }, [attendanceCalendar, todayKey]);
 
-  const canCheckInToday = useMemo(() => !hasCheckedInToday, [hasCheckedInToday]);
+  const hasCheckedInToday = Boolean(todayAttendance?.checkIn);
+  const hasCheckedOutToday = Boolean(todayAttendance?.checkOut);
 
-  const canCheckOutToday = useMemo(
-    () => hasCheckedInToday && !hasCheckedOutToday && isCheckedInNow,
-    [hasCheckedInToday, hasCheckedOutToday, isCheckedInNow],
-  );
+  const isCheckedInNow = hasCheckedInToday && !hasCheckedOutToday;
 
-  const applyAttendanceSnapshot = useCallback(
-    (studentId, attendanceData = {}, action) => {
-      const checkInValue =
-        attendanceData.checkIn || attendanceData.currentCheckIn || null;
-      const checkOutValueRaw =
-        attendanceData.checkOut || attendanceData.currentCheckOut || null;
-      const checkOutValue =
-        action === "checkout"
-          ? checkOutValueRaw || new Date().toISOString()
-          : checkOutValueRaw;
+  const canCheckInToday = !hasCheckedInToday;
 
-      const parsedCheckIn = parseAttendanceDate(checkInValue);
-      const parsedCheckOut = parseAttendanceDate(checkOutValue);
-
-      if (action === "checkin") {
-        setRunningCheckInTime(parsedCheckIn);
-        setElapsedSessionSeconds(0);
-        setLastSessionSeconds(0);
-      } else if (action === "checkout") {
-        setRunningCheckInTime(null);
-        if (parsedCheckIn && parsedCheckOut) {
-          setLastSessionSeconds(
-            Math.max(
-              0,
-              Math.floor((parsedCheckOut.getTime() - parsedCheckIn.getTime()) / 1000),
-            ),
-          );
-        } else if (Number.isFinite(Number(attendanceData.sessionMinutes)) && Number(attendanceData.sessionMinutes) > 0) {
-          setLastSessionSeconds(
-            Math.max(0, Math.floor(Number(attendanceData.sessionMinutes) * 60)),
-          );
-        } else {
-          setLastSessionSeconds(0);
-        }
-        if (typeof attendanceData.totalAttendanceMinutes === "number") {
-          setTotalAttendanceMinutes(attendanceData.totalAttendanceMinutes);
-        }
-      }
-
-      setStudents((prev) =>
-        prev.map((studentRow) => {
-          const rowId = studentRow.studentId ?? studentRow.id;
-          if (String(rowId) !== String(studentId)) return studentRow;
-
-          return {
-            ...studentRow,
-            checkedIn: action === "checkin",
-            currentCheckIn: checkInValue || studentRow.currentCheckIn || null,
-            currentCheckOut:
-              action === "checkin"
-                ? null
-                : checkOutValue || studentRow.currentCheckOut || null,
-          };
-        }),
-      );
-
-      const attendanceDayKey = toLocalDateKey(
-        checkInValue || checkOutValue || new Date(),
-      );
-      if (attendanceDayKey) {
-        setAttendanceCalendar((prev) => {
-          const nextEntry = {
-            date: attendanceDayKey,
-            status: "PRESENT",
-            checkIn: checkInValue || null,
-            checkOut: action === "checkout" ? checkOutValue || null : null,
-          };
-
-          const index = prev.findIndex(
-            (entry) => String(entry.date) === attendanceDayKey,
-          );
-          if (index === -1) return [...prev, nextEntry];
-
-          const updated = [...prev];
-          updated[index] = {
-            ...updated[index],
-            ...nextEntry,
-            checkIn: nextEntry.checkIn || updated[index].checkIn || null,
-            checkOut: nextEntry.checkOut || updated[index].checkOut || null,
-          };
-          return updated;
-        });
-      }
-    },
-    [setStudents],
-  );
+  const canCheckOutToday = hasCheckedInToday && !hasCheckedOutToday;
 
   const handleStudentAttendance = useCallback(
     async (action) => {
       if (isAdmin || !currentStudent) return;
-      const apiId = extractStudentId(currentStudent, user);
-      if (!apiId) {
-        setLoadError("Unable to resolve logged-in student id");
-        return;
-      }
+
+      const id = extractStudentId(currentStudent, user);
+      if (!id) return;
 
       setIsAttendanceUpdating(true);
-      setLoadError("");
+
       try {
-        const result =
+        const res =
           action === "checkin"
-            ? await checkInStudentApi(apiId)
-            : await checkOutStudentApi(apiId);
-        const attendancePayload =
-          result?.data && !Array.isArray(result.data) ? result.data : result;
-        applyAttendanceSnapshot(apiId, attendancePayload, action);
-      } catch (error) {
-        setLoadError(error.message || "Unable to update attendance");
+            ? await checkInStudentApi(id)
+            : await checkOutStudentApi(id);
+
+        const data = res?.data || res;
+
+        const checkIn = data.checkIn;
+        const checkOut = data.checkOut;
+
+        const key = toLocalDateKey(checkIn || checkOut || new Date());
+
+        setAttendanceCalendar((prev) => {
+          const idx = prev.findIndex((d) => d.date === key);
+
+          const updated = {
+            date: key,
+            status: "PRESENT",
+            checkIn,
+            checkOut,
+          };
+
+          if (idx === -1) return [...prev, updated];
+
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], ...updated };
+          return copy;
+        });
+
+        if (action === "checkin") {
+          setRunningCheckInTime(parseAttendanceDate(checkIn));
+          setLastSessionSeconds(0);
+        } else {
+          setRunningCheckInTime(null);
+          if (checkIn && checkOut) {
+            const sec =
+              (new Date(checkOut) - new Date(checkIn)) / 1000;
+            setLastSessionSeconds(sec);
+          }
+        }
+      } catch (e) {
+        setLoadError("Attendance update failed");
       } finally {
         setIsAttendanceUpdating(false);
       }
     },
-    [isAdmin, currentStudent, user, applyAttendanceSnapshot, setLoadError],
+    [currentStudent, user, isAdmin, setLoadError]
   );
 
   useEffect(() => {
-    if (!currentStudent) {
-      setRunningCheckInTime(null);
-      setElapsedSessionSeconds(0);
-      setLastSessionSeconds(0);
-      setTotalAttendanceMinutes(null);
-      return;
-    }
+    if (!runningCheckInTime) return;
 
-    const parsedCheckIn = parsedCurrentCheckIn;
-    const parsedCheckOut = parsedCurrentCheckOut;
-    const hasCheckInNoCheckOut = hasCheckedInToday && !hasCheckedOutToday;
-    const explicitlyCheckedIn = Boolean(currentStudent.checkedIn);
-    const activelyCheckedIn =
-      (explicitlyCheckedIn || hasCheckInNoCheckOut) && hasCheckInNoCheckOut;
-
-    if (activelyCheckedIn && parsedCheckIn && !parsedCheckOut) {
-      setRunningCheckInTime(parsedCheckIn);
-      setLastSessionSeconds(0);
-      setTotalAttendanceMinutes(
-        typeof currentStudent.totalAttendanceMinutes === "number"
-          ? currentStudent.totalAttendanceMinutes
-          : null,
+    const id = setInterval(() => {
+      setElapsedSessionSeconds(
+        Math.floor((Date.now() - runningCheckInTime.getTime()) / 1000)
       );
-      return;
-    }
+    }, 1000);
 
-    setRunningCheckInTime(null);
-    // Prefer timestamp-based calculation for accuracy, especially when lastSessionMinutes is 0
-    if (parsedCheckIn && parsedCheckOut) {
-      const sessionSeconds = Math.max(
-        0,
-        Math.floor((parsedCheckOut.getTime() - parsedCheckIn.getTime()) / 1000),
-      );
-      setLastSessionSeconds(sessionSeconds);
-    } else if (typeof currentStudent.lastSessionMinutes === "number" && currentStudent.lastSessionMinutes > 0) {
-      setLastSessionSeconds(
-        Math.max(0, Number(currentStudent.lastSessionMinutes) * 60),
-      );
-    } else {
-      setLastSessionSeconds(0);
-    }
-
-    setTotalAttendanceMinutes(
-      typeof currentStudent.totalAttendanceMinutes === "number"
-        ? currentStudent.totalAttendanceMinutes
-        : null,
-    );
-  }, [
-    currentStudent,
-    parsedCurrentCheckIn,
-    parsedCurrentCheckOut,
-    hasCheckedInToday,
-    hasCheckedOutToday,
-  ]);
-
-  useEffect(() => {
-    if (isAdmin) return;
-    const studentId = extractStudentId(currentStudent, user);
-    if (!studentId) return;
-
-    let isMounted = true;
-    (async () => {
-      try {
-        const response = await getStudentAttendanceCalendarApi(
-          studentId,
-          selectedMonth,
-        );
-        if (!isMounted) return;
-        setAttendanceCalendar(normalizeAttendanceEntries(response));
-      } catch (_) {
-        if (!isMounted) return;
-        setAttendanceCalendar([]);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    isAdmin,
-    currentStudent,
-    user,
-    selectedMonth,
-  ]);
-
-  const calendarMonthParts = useMemo(() => {
-    const [yearText, monthText] = String(selectedMonth || "").split("-");
-    const year = Number(yearText);
-    const monthIndex = Number(monthText) - 1;
-    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-      const now = new Date();
-      return { year: now.getFullYear(), monthIndex: now.getMonth() };
-    }
-    return { year, monthIndex };
-  }, [selectedMonth]);
-
-  const calendarDays = useMemo(() => {
-    const { year, monthIndex } = calendarMonthParts;
-    const totalDays = new Date(year, monthIndex + 1, 0).getDate();
-    const today = new Date();
-    const thisMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-
-    const days = [];
-    for (let day = 1; day <= totalDays; day += 1) {
-      const dayKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const inFuture = selectedMonth === thisMonthKey && day > today.getDate();
-      days.push({ day, dayKey, inFuture });
-    }
-    return days;
-  }, [calendarMonthParts, selectedMonth]);
-
-  const attendanceByDate = useMemo(() => {
-    const map = new Map();
-    attendanceCalendar.forEach((entry) => {
-      map.set(String(entry.date), entry);
-    });
-    return map;
-  }, [attendanceCalendar]);
-
-  useEffect(() => {
-    if (!runningCheckInTime) {
-      setElapsedSessionSeconds(0);
-      return undefined;
-    }
-
-    const tick = () => {
-      const seconds = Math.max(
-        0,
-        Math.floor((Date.now() - runningCheckInTime.getTime()) / 1000),
-      );
-      setElapsedSessionSeconds(seconds);
-    };
-
-    tick();
-    const intervalId = window.setInterval(tick, 1000);
-    return () => window.clearInterval(intervalId);
+    return () => clearInterval(id);
   }, [runningCheckInTime]);
 
   const sessionDurationDisplay = useMemo(() => {
-    if (runningCheckInTime) return toDurationString(elapsedSessionSeconds);
-    if (lastSessionSeconds > 0) return toDurationString(lastSessionSeconds);
-    return "00:00:00";
+    if (runningCheckInTime)
+      return toDurationString(elapsedSessionSeconds);
+    return toDurationString(lastSessionSeconds);
   }, [runningCheckInTime, elapsedSessionSeconds, lastSessionSeconds]);
 
-  const totalAttendanceDisplay = useMemo(() => {
-    if (typeof totalAttendanceMinutes === "number") {
-      return toDurationString(totalAttendanceMinutes * 60);
+  const totalAttendanceSeconds = useMemo(() => {
+    return attendanceCalendar.reduce((sum, entry) => {
+      if (!entry?.checkIn || !entry?.checkOut) return sum;
+      const start = parseAttendanceDate(entry.checkIn);
+      const end = parseAttendanceDate(entry.checkOut);
+      if (!start || !end) return sum;
+      return sum + Math.max(0, Math.floor((end - start) / 1000));
+    }, 0);
+  }, [attendanceCalendar]);
+
+  const totalAttendanceDisplay = useMemo(
+    () => toDurationString(totalAttendanceSeconds),
+    [totalAttendanceSeconds]
+  );
+
+  const attendanceByDate = useMemo(() => {
+    return new Map(
+      attendanceCalendar.map((entry) => [entry.date, entry])
+    );
+  }, [attendanceCalendar]);
+
+  const calendarDays = useMemo(() => {
+    const [yearText, monthText] = String(selectedMonth || "").split("-");
+    const year = Number(yearText);
+    const month = Number(monthText);
+    if (!year || !month) return [];
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    return Array.from({ length: daysInMonth }, (_, idx) => {
+      const day = idx + 1;
+      const dayKey = `${selectedMonth}-${String(day).padStart(2, "0")}`;
+      return {
+        day,
+        dayKey,
+        inFuture:
+          selectedMonth > currentMonthKey ||
+          (selectedMonth === currentMonthKey && day > now.getDate()),
+      };
+    });
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    if (isAdmin) return;
+
+    const id = extractStudentId(currentStudent, user);
+    if (!id) return;
+
+    getStudentAttendanceCalendarApi(id).then((res) => {
+      const normalized = normalizeAttendanceEntries(res);
+      setAttendanceCalendar(normalized);
+
+      const lastCompleted = [...normalized]
+        .reverse()
+        .find((entry) => entry?.checkIn && entry?.checkOut);
+      if (lastCompleted) {
+        const start = parseAttendanceDate(lastCompleted.checkIn);
+        const end = parseAttendanceDate(lastCompleted.checkOut);
+        if (start && end) {
+          setLastSessionSeconds(Math.max(0, Math.floor((end - start) / 1000)));
+        }
+      }
+    });
+  }, [currentStudent, user, isAdmin]);
+
+  useEffect(() => {
+    if (todayAttendance?.checkIn && !todayAttendance?.checkOut) {
+      setRunningCheckInTime(parseAttendanceDate(todayAttendance.checkIn));
+      return;
     }
 
-    const userValue = user?.attendanceHours;
-    if (typeof userValue === "string" && userValue.trim()) {
-      return userValue;
+    if (todayAttendance?.checkIn && todayAttendance?.checkOut) {
+      const start = parseAttendanceDate(todayAttendance.checkIn);
+      const end = parseAttendanceDate(todayAttendance.checkOut);
+      if (start && end) {
+        setLastSessionSeconds(Math.max(0, Math.floor((end - start) / 1000)));
+      }
     }
 
-    return "00:00:00";
-  }, [totalAttendanceMinutes, user?.attendanceHours]);
+    setRunningCheckInTime(null);
+  }, [todayAttendance]);
 
   return {
-    isAttendanceUpdating,
     runningCheckInTime,
-    elapsedSessionSeconds,
     lastSessionSeconds,
-    totalAttendanceMinutes,
-    attendanceCalendar,
-    selectedMonth,
-    setSelectedMonth,
     attendanceByDate,
     calendarDays,
+    selectedMonth,
+    setSelectedMonth,
     sessionDurationDisplay,
     totalAttendanceDisplay,
     hasCheckedOutToday,
@@ -433,5 +263,6 @@ export default function useAttendance({
     canCheckInToday,
     canCheckOutToday,
     handleStudentAttendance,
+    isAttendanceUpdating,
   };
 }
