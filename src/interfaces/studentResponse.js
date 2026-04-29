@@ -44,6 +44,21 @@ const toApiFeeStatus = (value) => {
 };
 
 export const normalizeStudent = (student = {}) => ({
+  // Attendance fields may come from either student APIs or check-in/out APIs.
+  // Normalize both key styles so UI state remains stable after refresh.
+  currentCheckIn: student.currentCheckIn ?? student.checkIn ?? student.current_check_in ?? null,
+  currentCheckOut: student.currentCheckOut ?? student.checkOut ?? student.current_check_out ?? null,
+  checkedIn:
+    student.checkedIn !== undefined && student.checkedIn !== null
+      ? Boolean(student.checkedIn)
+      : (() => {
+          const action = String(student.action || student.attendanceAction || '').toUpperCase();
+          if (action === 'CHECKED_IN') return true;
+          if (action === 'CHECKED_OUT') return false;
+          const checkInValue = student.currentCheckIn ?? student.checkIn ?? student.current_check_in ?? null;
+          const checkOutValue = student.currentCheckOut ?? student.checkOut ?? student.current_check_out ?? null;
+          return Boolean(checkInValue && !checkOutValue);
+        })(),
   studentId: student.studentId || student.id || null,
   userCode: student.userCode || student.studentCode || '',
   id: student.userCode || student.studentCode || student.id || student.studentId || '',
@@ -58,10 +73,15 @@ export const normalizeStudent = (student = {}) => ({
   subscriptionExpiry: student.subscriptionExpiry || '',
   monthlyFee: Number(student.monthlyFee || 0),
   feeStatus: toUiStatus(student.feeStatus, 'Pending'),
-  currentCheckIn: student.currentCheckIn,
-  currentCheckOut: student.currentCheckOut,
   active: student.active !== undefined ? Boolean(student.active) : true,
-  checkedIn: student.checkedIn !== undefined ? Boolean(student.checkedIn) : Boolean(student.currentCheckIn && !student.currentCheckOut),
+  lastSessionMinutes:
+    student.lastSessionMinutes !== undefined && student.lastSessionMinutes !== null
+      ? Number(student.lastSessionMinutes)
+      : null,
+  totalAttendanceMinutes:
+    student.totalAttendanceMinutes !== undefined && student.totalAttendanceMinutes !== null
+      ? Number(student.totalAttendanceMinutes)
+      : null,
 });
 
 

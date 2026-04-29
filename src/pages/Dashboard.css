@@ -118,6 +118,112 @@
   margin-left: 12px;
 }
 
+.student-attendance-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.attendance-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 6px;
+}
+
+.attendance-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.attendance-calendar {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.attendance-calendar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendance-calendar-head input[type="month"] {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+/* 
+.attendance-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.legend-item.present {
+  color: var(--positive);
+}
+
+.legend-item.absent {
+  color: var(--danger);
+} */
+
+.attendance-calendar-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.calendar-day {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 6px;
+  font-size: 0.74rem;
+}
+
+.calendar-day > strong {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.calendar-day.present {
+  border-color: color-mix(in srgb, var(--positive) 60%, var(--line));
+}
+
+.calendar-day.present > strong {
+  color: var(--positive);
+}
+
+.calendar-day.absent {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+}
+
+.calendar-day.absent > strong {
+  color: var(--danger);
+}
+
+.calendar-day.future {
+  opacity: 0.6;
+}
+
 .quick-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -145,8 +251,57 @@
   color: var(--text);
 }
 
+.attendance-info {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.attendance-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  background: var(--muted);
+}
+
+.attendance-status.present {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.attendance-status.absent {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.attendance-status.checked-out {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
+.attendance-status.info {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+/* Neutral (Gray - for dates) */
+.attendance-status.neutral {
+  background: #dcfce7;
+  color: #166534;
+}
+
+
 @media (max-width: 768px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .attendance-calendar-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }

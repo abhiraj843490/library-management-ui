@@ -188,19 +188,19 @@ const Students = () => {
     updateStudentStatus(targetStudent, { feeStatus: 'Paid' }, 'Payment status updated');
   };
 
-  const handleCheckIn = (studentId) => {
-    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
-    if (!targetStudent) return;
-    const now = new Date().toLocaleString('en-IN');
-    updateStudentStatus(targetStudent, { checkedIn: true, currentCheckIn: now, currentCheckOut: null }, 'Check-in updated');
-  };
+  // const handleCheckIn = (studentId) => {
+  //   const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+  //   if (!targetStudent) return;
+  //   const now = new Date().toLocaleString('en-IN');
+  //   updateStudentStatus(targetStudent, { checkedIn: true, currentCheckIn: now, currentCheckOut: null }, 'Check-in updated');
+  // };
 
-  const handleCheckOut = (studentId) => {
-    const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
-    if (!targetStudent) return;
-    const now = new Date().toLocaleString('en-IN');
-    updateStudentStatus(targetStudent, { checkedIn: false, currentCheckOut: now }, 'Check-out updated');
-  };
+  // const handleCheckOut = (studentId) => {
+  //   const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
+  //   if (!targetStudent) return;
+  //   const now = new Date().toLocaleString('en-IN');
+  //   updateStudentStatus(targetStudent, { checkedIn: false, currentCheckOut: now }, 'Check-out updated');
+  // };
 
   const handleRemoveStudent = (studentId) => {
     const targetStudent = students.find(s => String(s.studentId ?? s.id) === String(studentId));
@@ -354,41 +354,24 @@ const Students = () => {
                       {student.feeStatus}
                     </span>
                   </div>
-                  {student.feeStatus === 'Pending' && (
+                  {student.feeStatus === 'Pending' && !isInactiveRow && (
                     <button 
                       className="btn btn-primary"
                       onClick={() => handleProcessPayment(rowId)}
-                      disabled={isInactiveRow || isUpdatingRow}
+                      disabled={isUpdatingRow}
                     >
-                      💳 Process Payment
+                      Pay ₹ {student.monthlyFee}
                     </button>
                   )}
                 </div>
 
                 <div className="checkin-section">
-                  {student.currentCheckIn && (
-                    <div className="checkin-info">
-                      <span>Check-In: {student.currentCheckIn}</span>
-                      {student.currentCheckOut && (
-                        <span>Check-Out: {student.currentCheckOut}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="checkin-buttons">
-                    <button 
-                      className="btn btn-success"
-                      onClick={() => handleCheckIn(rowId)}
-                      disabled={isInactiveRow || Boolean(student.currentCheckOut) || (student.currentCheckIn && !student.currentCheckOut) || isUpdatingRow}
-                    >
-                      ✅ Check-In
-                    </button>
-                    <button 
-                      className="btn btn-warning"
-                      onClick={() => handleCheckOut(rowId)}
-                      disabled={isInactiveRow || !student.currentCheckIn || Boolean(student.currentCheckOut) || isUpdatingRow}
-                    >
-                      ⏹️ Check-Out
-                    </button>
+                  <div className="attendance-info">
+                    <span className={`attendance-status ${student.checkedIn ? 'present' : 'absent'}`}>
+                      {student.checkedIn ? 'Present' : 'Yet to check In'}
+                    </span>
+                  </div>
+                 
                     <button 
                       className="btn btn-danger"
                       onClick={() => handleRemoveStudent(rowId)}
@@ -397,7 +380,6 @@ const Students = () => {
                       🗑️ Remove
                     </button>
                   </div>
-                </div>
               </div>
             )})}
           </div>

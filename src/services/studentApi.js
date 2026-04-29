@@ -61,4 +61,31 @@ export const updateStudentApi = (studentId, payload) =>
     'Update failed'
   );
 
+export const checkInStudentApi = (studentId) =>
+  request(
+    `${STUDENTS_ENDPOINT}/${studentId}/check-in`,
+    {
+      method: 'POST',
+    },
+    'Check-in failed'
+  );
+
+export const checkOutStudentApi = (studentId) =>
+  request(
+    `${STUDENTS_ENDPOINT}/${studentId}/check-out`,
+    {
+      method: 'POST',
+    },
+    'Check-out failed'
+  );
+
+export const getStudentAttendanceCalendarApi = (studentId, month) => {
+  const query = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request(
+    `${STUDENTS_ENDPOINT}/${studentId}/attendance${query}`,
+    { method: 'GET' },
+    'Failed to fetch attendance calendar'
+  );
+};
+
 export const getSeatsApi = () => request(SEATS_ENDPOINT, { method: 'GET' }, 'Failed to fetch seats');
