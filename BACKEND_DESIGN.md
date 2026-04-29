@@ -1,1151 +1,395 @@
-# Library Management System - Spring Boot Backend Design
+# Backend Design (Current App Functionality)
 
-## 1. Database Schema Design
+## 1. Scope Alignment
 
-### Database: `library_management_db`
+This design matches the current frontend routes and interactions in `src/App.js`:
+- `/login`
+- `/dashboard`
+- `/students` (admin only)
+- `/study-spaces`
+- `/my-bookings` (student only)
+- `/view-seats` (student only)
+- `/study-space-reports`
 
----
-
-## 1.1 Tables Overview
-
-```
-Books (one-to-many) → Loans
-Members (one-to-many) → Loans
-Members (one-to-many) → Fines
-Loans (one-to-many) → Fines
-```
+The app is currently a **study-space management system with student administration**, not a full books/loans/fines flow.
 
 ---
 
-## 1.2 Detailed Table Schemas
+## 2. Core Modules
 
-### Table: `books`
+1. Authentication and Authorization
+2. Student Management
+3. Study Space Catalog
+4. Time Slot Management
+5. Booking Management
+6. Feedback and Ratings
+7. Attendance (Check-in/Check-out)
+8. Reporting Dashboard
+
+---
+
+## 3. Recommended Tech Stack
+
+- Java 17+
+- Spring Boot 3.x
+- Spring Web
+- Spring Data JPA
+- Spring Security + JWT
+- MySQL 8.x
+- Flyway (schema migrations)
+- Bean Validation (`jakarta.validation`)
+
+---
+
+## 4. Database Schema
+
+Database name: `library_study_space_db`
+
+### 4.1 users
+
 ```sql
-CREATE TABLE books (
+CREATE TABLE users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    title VARCHAR(255) NOT NULL,
-    author VARCHAR(255) NOT NULL,
-    isbn VARCHAR(20) UNIQUE NOT NULL,
-    category VARCHAR(100) NOT NULL,
-    total_copies INT NOT NULL DEFAULT 1,
-    available_copies INT NOT NULL DEFAULT 1,
-    shelf_location VARCHAR(50),
-    description TEXT,
-    publication_year INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    INDEX idx_title (title),
-    INDEX idx_author (author),
-    INDEX idx_category (category),
-    INDEX idx_isbn (isbn)
+    user_code VARCHAR(20) UNIQUE NOT NULL, -- ADM-001, STU-001
+    name VARCHAR(120) NOT NULL,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role ENUM('ADMIN','STUDENT') NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_role (role),
+    INDEX idx_email (email)
 );
 ```
 
-**Field Explanations**:
-- `id`: Unique book identifier (primary key)
-- `title`: Book title (searchable)
-- `author`: Author name (searchable)
-- `isbn`: International Standard Book Number (unique, indexed for quick lookup)
-- `category`: Book category (e.g., Fiction, Science, History) - supports filtering
-- `total_copies`: Total physical copies in the library
-- `available_copies`: Number currently available for lending
-- `shelf_location`: Physical location in library (e.g., "A3-15")
-- `description`: Book summary/description
-- `publication_year`: Year of publication
-- `created_at`, `updated_at`: Audit timestamps
+### 4.2 students
 
----
-
-### Table: `members`
 ```sql
-CREATE TABLE members (
+CREATE TABLE students (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    membership_type ENUM('STUDENT', 'FACULTY', 'STAFF', 'RESEARCHER', 'VISITOR') NOT NULL,
-    membership_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    borrowed_count INT DEFAULT 0,
-    status ENUM('ACTIVE', 'INACTIVE', 'REVIEW', 'SUSPENDED') DEFAULT 'ACTIVE',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    INDEX idx_name (name),
-    INDEX idx_email (email),
-    INDEX idx_phone (phone),
-    INDEX idx_status (status),
-    INDEX idx_membership_type (membership_type)
+    user_id BIGINT UNIQUE NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    gender ENUM('BOYS','GIRLS') NOT NULL,
+    seat_section ENUM('Regular','Silent') NOT NULL,
+    seat_number VARCHAR(20),
+    enrollment_date DATE NOT NULL,
+    subscription_status ENUM('Active','Inactive') NOT NULL DEFAULT 'Active',
+    subscription_expiry DATE NOT NULL,
+    monthly_fee DECIMAL(10,2) NOT NULL DEFAULT 8500.00,
+    fee_status ENUM('Paid','Pending') NOT NULL DEFAULT 'Pending',
+    current_check_in DATETIME NULL,
+    current_check_out DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_students_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_student_seat (seat_number),
+    INDEX idx_student_fee_status (fee_status),
+    INDEX idx_student_subscription (subscription_status)
 );
 ```
 
-**Field Explanations**:
-- `id`: Unique member identifier (primary key)
-- `name`: Member's full name (searchable)
-- `email`: Email address (unique, for communication)
-- `phone`: Contact number
-- `membership_type`: Type of membership (enum: Student, Faculty, etc.)
-  - Useful for applying different borrowing limits
-- `membership_date`: Registration date
-- `borrowed_count`: Total books currently borrowed (denormalized for quick stats)
-- `status`: Member status (Active/Inactive/Review/Suspended)
-  - Suspended members cannot borrow
-- `created_at`, `updated_at`: Audit timestamps
+### 4.3 study_spaces
 
----
-
-### Table: `loans`
 ```sql
-CREATE TABLE loans (
+CREATE TABLE study_spaces (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    book_id BIGINT NOT NULL,
-    member_id BIGINT NOT NULL,
-    issued_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    due_on TIMESTAMP NOT NULL,
-    returned_on TIMESTAMP NULL,
-    status ENUM('ACTIVE', 'DUE_SOON', 'OVERDUE', 'RETURNED') DEFAULT 'ACTIVE',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE RESTRICT,
-    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
-    INDEX idx_book_id (book_id),
-    INDEX idx_member_id (member_id),
-    INDEX idx_status (status),
-    INDEX idx_issued_on (issued_on),
-    INDEX idx_due_on (due_on),
-    INDEX idx_active_loans (status, due_on) -- Composite index for performance
+    space_name VARCHAR(120) NOT NULL,
+    room_type ENUM('INDIVIDUAL','GROUP','SILENT','DISCUSSION') NOT NULL,
+    capacity INT NOT NULL,
+    location VARCHAR(120) NOT NULL,
+    floor_no INT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_room_type (room_type),
+    INDEX idx_floor (floor_no)
 );
 ```
 
-**Field Explanations**:
-- `id`: Unique loan transaction identifier (primary key)
-- `book_id`: Foreign key to `books` table (cascade on delete prevents orphaned books)
-- `member_id`: Foreign key to `members` table (cascade delete removes all loans if member deleted)
-- `issued_on`: When the book was issued
-- `due_on`: When the book should be returned (automatically calculated: issued_on + 14 days)
-- `returned_on`: Actual return date (NULL if not yet returned)
-- `status`: Loan status (calculated based on dates)
-  - `ACTIVE`: Issued, not overdue, within 3 days of due
-  - `DUE_SOON`: Due within 3 days
-  - `OVERDUE`: Past due date
-  - `RETURNED`: Returned successfully
-- `created_at`, `updated_at`: Audit timestamps
+### 4.4 study_space_facilities
 
-**Indexing Strategy**:
-- `idx_active_loans`: Composite index for query finding active and overdue loans (common operation)
-
----
-
-### Table: `fines`
 ```sql
-CREATE TABLE fines (
+CREATE TABLE study_space_facilities (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    member_id BIGINT NOT NULL,
-    loan_id BIGINT NOT NULL,
-    amount_cents BIGINT NOT NULL, -- Store in cents to avoid floating point issues
-    status ENUM('UNPAID', 'PAID') DEFAULT 'UNPAID',
-    reason VARCHAR(255) NOT NULL, -- e.g., "Overdue by 5 days"
-    created_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    paid_on TIMESTAMP NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
-    FOREIGN KEY (loan_id) REFERENCES loans(id) ON DELETE CASCADE,
-    INDEX idx_member_id (member_id),
-    INDEX idx_loan_id (loan_id),
-    INDEX idx_status (status),
-    INDEX idx_created_on (created_on)
+    study_space_id BIGINT NOT NULL,
+    facility_name VARCHAR(80) NOT NULL,
+    CONSTRAINT fk_facility_space FOREIGN KEY (study_space_id) REFERENCES study_spaces(id) ON DELETE CASCADE,
+    INDEX idx_facility_space (study_space_id)
 );
 ```
 
-**Field Explanations**:
-- `id`: Unique fine identifier (primary key)
-- `member_id`: Foreign key to `members` table
-- `loan_id`: Foreign key to `loans` table (which loan generated this fine)
-- `amount_cents`: Fine amount in cents (₹10.50 = 1050 cents for precision without floating point)
-- `status`: Payment status (Unpaid/Paid)
-- `reason`: Description of fine (e.g., "Overdue by 5 days")
-- `created_on`: When the fine was generated
-- `paid_on`: When the fine was paid (NULL if unpaid)
-- `updated_at`: Last update timestamp
+### 4.5 time_slots
 
-**Why cents instead of decimal?**
-- Avoids floating-point precision issues
-- Standard practice in financial systems
-- Easy to convert: divide by 100 for display as currency
-
----
-
-## 2. Entity Relationships
-
-```
-┌─────────────┐
-│    Books    │
-├─────────────┤
-│ id (PK)     │
-│ title       │
-│ author      │
-│ isbn        │
-│ category    │
-│ total_copies│
-│ avail_copies│
-└──────┬──────┘
-       │ (1:N)
-       │
-       ├─────────────────────────┐
-       │                         │
-   ┌───┴──────┐         ┌───────┴─┐
-   │           │         │         │
-┌──┴────────────────┐    │         │
-│     Loans         │    │         │
-├──────────────────┤┘    │         │
-│ id (PK)          │     │         │
-│ book_id (FK)─────┼─────┘         │
-│ member_id (FK)───┼───────────┐   │
-│ issued_on        │           │   │
-│ due_on           │     ┌─────┴───┴────┐
-│ returned_on      │     │              │
-│ status           │     │              │
-└───────────────┬──┘  ┌──┴──────────────┴──┐
-                │     │     Members        │
-                │     ├────────────────────┤
-                │     │ id (PK)            │
-                │     │ name               │
-                │     │ email              │
-                │     │ phone              │
-                │     │ membership_type    │
-                │     │ membership_date    │
-                │     │ borrowed_count     │
-                │     │ status             │
-                │     └──────────────┬─────┘
-                │                    │ (1:N)
-                │                    │
-                │    ┌───────────────┘
-                │    │
-            ┌───┴────┴──────────┐
-            │      Fines        │
-            ├───────────────────┤
-            │ id (PK)           │
-            │ member_id (FK)────┼─── Members
-            │ loan_id (FK)──────┼─── Loans
-            │ amount_cents      │
-            │ status            │
-            │ reason            │
-            │ created_on        │
-            │ paid_on           │
-            └───────────────────┘
-```
-
----
-
-## 3. Relationship Rules
-
-| Relation | Type | Cascade | Notes |
-|----------|------|---------|-------|
-| Books → Loans | 1:N | RESTRICT on delete | Cannot delete book with active loans |
-| Members → Loans | 1:N | CASCADE on delete | Deleting member removes all loans |
-| Members → Fines | 1:N | CASCADE on delete | Deleting member removes all fines |
-| Loans → Fines | 1:N | CASCADE on delete | Deleting loan removes associated fines |
-
----
-
-## 4. Database Normalization
-
-**Normalization Level**: 3NF (Third Normal Form)
-
-**Denormalized Fields** (necessary for performance):
-- `members.borrowed_count`: Denormalized from COUNT(loans where returned_on IS NULL)
-  - **Why**: Quick dashboard statistics without complex JOIN queries
-  - **Update Strategy**: Update on issue/return of book
-
-- `books.available_copies`: Denormalized from (total_copies - COUNT(active loans))
-  - **Why**: Quick inventory checks without complex calculations
-  - **Update Strategy**: Update when loan issued/returned
-
----
-
-## 5. Sample Data Population
-
-### Insert Sample Books
 ```sql
-INSERT INTO books (title, author, isbn, category, total_copies, available_copies, shelf_location, description, publication_year) VALUES
-('The Great Gatsby', 'F. Scott Fitzgerald', '978-0-7432-7356-5', 'Fiction', 3, 3, 'A1-12', 'A classic American novel', 1925),
-('To Kill a Mockingbird', 'Harper Lee', '978-0-06-112008-4', 'Fiction', 2, 2, 'A2-05', 'A gripping tale of racial injustice', 1960),
-('1984', 'George Orwell', '978-0-451-52493-2', 'Science Fiction', 4, 4, 'A3-18', 'Dystopian masterpiece', 1949),
-('Sapiens', 'Yuval Noah Harari', '978-0-06-231609-7', 'Non-Fiction', 2, 2, 'B1-22', 'History of humankind', 2011);
+CREATE TABLE time_slots (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    slot_name VARCHAR(100) NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    slot_type ENUM('DAY','NIGHT') NOT NULL,
+    duration_minutes INT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-### Insert Sample Members
+### 4.6 bookings
+
 ```sql
-INSERT INTO members (name, email, phone, membership_type, status) VALUES
-('Abhiraj Singh', 'abhiraj@example.com', '9876543210', 'STUDENT', 'ACTIVE'),
-('Dr. Sharma', 'dr.sharma@example.com', '9876543211', 'FACULTY', 'ACTIVE'),
-('Priya Gupta', 'priya@example.com', '9876543212', 'STAFF', 'ACTIVE');
+CREATE TABLE bookings (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    booking_code VARCHAR(20) UNIQUE NOT NULL,
+    student_id BIGINT NOT NULL,
+    study_space_id BIGINT NOT NULL,
+    time_slot_id BIGINT NOT NULL,
+    booking_date DATE NOT NULL,
+    booking_type ENUM('SOLO','GROUP') NOT NULL,
+    group_size INT NOT NULL DEFAULT 1,
+    status ENUM('CONFIRMED','COMPLETED','CANCELLED','NO_SHOW') NOT NULL DEFAULT 'CONFIRMED',
+    can_be_cancelled BOOLEAN NOT NULL DEFAULT TRUE,
+    notes VARCHAR(500),
+    cancelled_reason VARCHAR(500),
+    cancelled_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_booking_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    CONSTRAINT fk_booking_space FOREIGN KEY (study_space_id) REFERENCES study_spaces(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_booking_slot FOREIGN KEY (time_slot_id) REFERENCES time_slots(id) ON DELETE RESTRICT,
+    UNIQUE KEY uk_space_slot_date (study_space_id, time_slot_id, booking_date),
+    INDEX idx_booking_student (student_id),
+    INDEX idx_booking_status (status),
+    INDEX idx_booking_date (booking_date)
+);
 ```
 
-### Insert Sample Loans
+### 4.7 booking_feedback
+
 ```sql
-INSERT INTO loans (book_id, member_id, issued_on, due_on, status) VALUES
-(1, 1, '2026-03-10 10:00:00', '2026-03-24 10:00:00', 'ACTIVE'),
-(3, 2, '2026-03-15 14:30:00', '2026-03-29 14:30:00', 'ACTIVE');
+CREATE TABLE booking_feedback (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    booking_id BIGINT UNIQUE NOT NULL,
+    rating INT NOT NULL,
+    cleanliness_rating INT NOT NULL,
+    noise_level ENUM('QUIET','MODERATE','NOISY') NOT NULL,
+    comment VARCHAR(1000),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_feedback_booking FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
+    CONSTRAINT chk_rating CHECK (rating BETWEEN 1 AND 5),
+    CONSTRAINT chk_clean_rating CHECK (cleanliness_rating BETWEEN 1 AND 5)
+);
 ```
 
----
+### 4.8 payment_transactions
 
-## 6. Spring Boot Backend Structure
-
-### Project Structure
-```
-library-management-backend/
-├── src/main/java/com/library/
-│   ├── LmApplication.java (Main Spring Boot Application)
-│   │
-│   ├── config/
-│   │   ├── DatabaseConfig.java
-│   │   ├── SecurityConfig.java
-│   │   └── CorsConfig.java
-│   │
-│   ├── controller/
-│   │   ├── BookController.java
-│   │   ├── MemberController.java
-│   │   ├── LoanController.java
-│   │   ├── FineController.java
-│   │   └── ReportController.java
-│   │
-│   ├── service/
-│   │   ├── BookService.java
-│   │   ├── MemberService.java
-│   │   ├── LoanService.java
-│   │   ├── FineService.java
-│   │   └── ReportService.java
-│   │
-│   ├── repository/
-│   │   ├── BookRepository.java
-│   │   ├── MemberRepository.java
-│   │   ├── LoanRepository.java
-│   │   └── FineRepository.java
-│   │
-│   ├── entity/
-│   │   ├── Book.java
-│   │   ├── Member.java
-│   │   ├── Loan.java
-│   │   └── Fine.java
-│   │
-│   ├── dto/
-│   │   ├── BookDTO.java
-│   │   ├── MemberDTO.java
-│   │   ├── LoanDTO.java
-│   │   ├── FineDTO.java
-│   │   └── StatsDTO.java
-│   │
-│   ├── exception/
-│   │   ├── ResourceNotFoundException.java
-│   │   ├── InvalidOperationException.java
-│   │   └── GlobalExceptionHandler.java
-│   │
-│   └── util/
-│       ├── Constants.java
-│       └── DateUtils.java
-│
-├── src/main/resources/
-│   ├── application.properties
-│   ├── application-dev.properties
-│   └── application-prod.properties
-│
-├── src/test/java/...
-├── pom.xml
-└── README.md
-```
-
----
-
-## 7. Core Entities (JPA)
-
-### Book Entity
-```java
-@Entity
-@Table(name = "books", indexes = {
-    @Index(name = "idx_title", columnList = "title"),
-    @Index(name = "idx_author", columnList = "author"),
-    @Index(name = "idx_category", columnList = "category"),
-    @Index(name = "idx_isbn", columnList = "isbn")
-})
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Book {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @Column(nullable = false)
-    private String title;
-    
-    @Column(nullable = false)
-    private String author;
-    
-    @Column(unique = true, nullable = false)
-    private String isbn;
-    
-    @Column(nullable = false)
-    private String category;
-    
-    @Column(nullable = false, columnDefinition = "INT DEFAULT 1")
-    private Integer totalCopies;
-    
-    @Column(nullable = false, columnDefinition = "INT DEFAULT 1")
-    private Integer availableCopies;
-    
-    @Column(name = "shelf_location")
-    private String shelfLocation;
-    
-    @Column(columnDefinition = "TEXT")
-    private String description;
-    
-    @Column(name = "publication_year")
-    private Integer publicationYear;
-    
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-    
-    @OneToMany(mappedBy = "book", cascade = CascadeType.ALL)
-    private List<Loan> loans = new ArrayList<>();
-}
-```
-
-### Member Entity
-```java
-@Entity
-@Table(name = "members", indexes = {
-    @Index(name = "idx_name", columnList = "name"),
-    @Index(name = "idx_email", columnList = "email"),
-    @Index(name = "idx_status", columnList = "status"),
-    @Index(name = "idx_membership_type", columnList = "membership_type")
-})
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Member {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @Column(nullable = false)
-    private String name;
-    
-    @Column(unique = true, nullable = false)
-    private String email;
-    
-    @Column(length = 20)
-    private String phone;
-    
-    @Enumerated(EnumType.STRING)
-    @Column(name = "membership_type", nullable = false)
-    private MembershipType membershipType;
-    
-    @Column(name = "membership_date", nullable = false)
-    @CreationTimestamp
-    private LocalDateTime membershipDate;
-    
-    @Column(name = "borrowed_count", columnDefinition = "INT DEFAULT 0")
-    private Integer borrowedCount = 0;
-    
-    @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "ENUM('ACTIVE', 'INACTIVE', 'REVIEW', 'SUSPENDED') DEFAULT 'ACTIVE'")
-    private MemberStatus status = MemberStatus.ACTIVE;
-    
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-    
-    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL)
-    private List<Loan> loans = new ArrayList<>();
-    
-    @OneToMany(mappedBy = "member", cascade = CascadeType.ALL)
-    private List<Fine> fines = new ArrayList<>();
-}
-
-enum MembershipType {
-    STUDENT, FACULTY, STAFF, RESEARCHER, VISITOR
-}
-
-enum MemberStatus {
-    ACTIVE, INACTIVE, REVIEW, SUSPENDED
-}
-```
-
-### Loan Entity
-```java
-@Entity
-@Table(name = "loans", indexes = {
-    @Index(name = "idx_book_id", columnList = "book_id"),
-    @Index(name = "idx_member_id", columnList = "member_id"),
-    @Index(name = "idx_status", columnList = "status"),
-    @Index(name = "idx_active_loans", columnList = "status,due_on")
-})
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Loan {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "book_id", nullable = false)
-    private Book book;
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
-    
-    @Column(name = "issued_on", nullable = false)
-    @CreationTimestamp
-    private LocalDateTime issuedOn;
-    
-    @Column(name = "due_on", nullable = false)
-    private LocalDateTime dueOn;
-    
-    @Column(name = "returned_on")
-    private LocalDateTime returnedOn;
-    
-    @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "ENUM('ACTIVE', 'DUE_SOON', 'OVERDUE', 'RETURNED') DEFAULT 'ACTIVE'")
-    private LoanStatus status = LoanStatus.ACTIVE;
-    
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-    
-    @OneToMany(mappedBy = "loan", cascade = CascadeType.ALL)
-    private List<Fine> fines = new ArrayList<>();
-    
-    // Calculated field - determine status based on current date
-    @Transient
-    public LoanStatus getCalculatedStatus() {
-        if (returnedOn != null) return LoanStatus.RETURNED;
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime warningDate = dueOn.minusDays(3);
-        if (now.isAfter(dueOn)) return LoanStatus.OVERDUE;
-        if (now.isAfter(warningDate)) return LoanStatus.DUE_SOON;
-        return LoanStatus.ACTIVE;
-    }
-}
-
-enum LoanStatus {
-    ACTIVE, DUE_SOON, OVERDUE, RETURNED
-}
-```
-
-### Fine Entity
-```java
-@Entity
-@Table(name = "fines", indexes = {
-    @Index(name = "idx_member_id", columnList = "member_id"),
-    @Index(name = "idx_loan_id", columnList = "loan_id"),
-    @Index(name = "idx_status", columnList = "status")
-})
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Fine {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "member_id", nullable = false)
-    private Member member;
-    
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "loan_id", nullable = false)
-    private Loan loan;
-    
-    @Column(name = "amount_cents", nullable = false)
-    private Long amountCents; // Store as cents for precision
-    
-    @Enumerated(EnumType.STRING)
-    @Column(columnDefinition = "ENUM('UNPAID', 'PAID') DEFAULT 'UNPAID'")
-    private FineStatus status = FineStatus.UNPAID;
-    
-    @Column(nullable = false)
-    private String reason;
-    
-    @Column(name = "created_on", nullable = false)
-    @CreationTimestamp
-    private LocalDateTime createdOn;
-    
-    @Column(name = "paid_on")
-    private LocalDateTime paidOn;
-    
-    @UpdateTimestamp
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
-    
-    // Utility method to get amount in currency (rupees)
-    @Transient
-    public BigDecimal getAmountInRupees() {
-        return BigDecimal.valueOf(amountCents).divide(BigDecimal.valueOf(100));
-    }
-}
-
-enum FineStatus {
-    UNPAID, PAID
-}
-```
-
----
-
-## 8. Repository Interfaces (Spring Data JPA)
-
-### BookRepository
-```java
-@Repository
-public interface BookRepository extends JpaRepository<Book, Long> {
-    Optional<Book> findByIsbn(String isbn);
-    List<Book> findByTitleContainingIgnoreCase(String title);
-    List<Book> findByAuthorContainingIgnoreCase(String author);
-    List<Book> findByCategory(String category);
-    List<Book> findByAvailableCopiesGreaterThan(Integer copies);
-    
-    @Query("SELECT DISTINCT b.category FROM Book b")
-    List<String> findAllCategories();
-}
-```
-
-### MemberRepository
-```java
-@Repository
-public interface MemberRepository extends JpaRepository<Member, Long> {
-    Optional<Member> findByEmail(String email);
-    List<Member> findByNameContainingIgnoreCase(String name);
-    List<Member> findByStatus(MemberStatus status);
-    List<Member> findByMembershipType(MembershipType membershipType);
-    
-    @Query("SELECT m FROM Member m WHERE m.status = 'SUSPENDED' AND m.borrowedCount > 0")
-    List<Member> findSuspendedMembersWithPendingBooks();
-}
-```
-
-### LoanRepository
-```java
-@Repository
-public interface LoanRepository extends JpaRepository<Loan, Long> {
-    List<Loan> findByMemberId(Long memberId);
-    List<Loan> findByBookId(Long bookId);
-    List<Loan> findByStatus(LoanStatus status);
-    List<Loan> findByMemberIdAndReturnedOnIsNull(Long memberId);
-    
-    @Query("SELECT l FROM Loan l WHERE l.status IN ('ACTIVE', 'DUE_SOON', 'OVERDUE') AND l.returnedOn IS NULL")
-    List<Loan> findActiveLikeLoans();
-    
-    @Query("SELECT l FROM Loan l WHERE l.dueOn < CURRENT_TIMESTAMP AND l.returnedOn IS NULL")
-    List<Loan> findOverdueLoans();
-    
-    // For dashboard statistics
-    @Query("SELECT COUNT(l) FROM Loan l WHERE l.returnedOn IS NULL AND l.member.id = ?1")
-    long countActiveLoansForMember(Long memberId);
-}
-```
-
-### FineRepository
-```java
-@Repository
-public interface FineRepository extends JpaRepository<Fine, Long> {
-    List<Fine> findByMemberId(Long memberId);
-    List<Fine> findByLoanId(Long loanId);
-    List<Fine> findByStatus(FineStatus status);
-    List<Fine> findByMemberIdAndStatus(Long memberId, FineStatus status);
-    
-    @Query("SELECT SUM(f.amountCents) FROM Fine f WHERE f.status = 'UNPAID'")
-    Optional<Long> getTotalUnpaidFinesInCents();
-    
-    @Query("SELECT SUM(f.amountCents) FROM Fine f WHERE f.status = 'PAID'")
-    Optional<Long> getTotalPaidFinesInCents();
-}
-```
-
----
-
-## 9. Service Layer (Business Logic)
-
-### LoanService (Key Business Logic)
-```java
-@Service
-@Transactional
-public class LoanService {
-    
-    @Autowired
-    private LoanRepository loanRepository;
-    
-    @Autowired
-    private BookRepository bookRepository;
-    
-    @Autowired
-    private MemberRepository memberRepository;
-    
-    @Autowired
-    private FineRepository fineRepository;
-    
-    private static final Integer LOAN_DURATION_DAYS = 14;
-    private static final Integer FINE_PER_DAY_CENTS = 1000; // ₹10 in cents
-    
-    public LoanDTO issueLoan(Long bookId, Long memberId) {
-        Book book = bookRepository.findById(bookId)
-            .orElseThrow(() -> new ResourceNotFoundException("Book not found"));
-        
-        Member member = memberRepository.findById(memberId)
-            .orElseThrow(() -> new ResourceNotFoundException("Member not found"));
-        
-        // Validation checks
-        if (book.getAvailableCopies() <= 0) {
-            throw new InvalidOperationException("Book not available");
-        }
-        
-        if (!member.getStatus().equals(MemberStatus.ACTIVE)) {
-            throw new InvalidOperationException("Member account is not active");
-        }
-        
-        // Create loan with auto-calculated due date
-        LocalDateTime issuedOn = LocalDateTime.now();
-        LocalDateTime dueOn = issuedOn.plusDays(LOAN_DURATION_DAYS);
-        
-        Loan loan = Loan.builder()
-            .book(book)
-            .member(member)
-            .issuedOn(issuedOn)
-            .dueOn(dueOn)
-            .status(LoanStatus.ACTIVE)
-            .build();
-        
-        // Update book inventory
-        book.setAvailableCopies(book.getAvailableCopies() - 1);
-        bookRepository.save(book);
-        
-        // Update member borrowed count
-        member.setBorrowedCount(member.getBorrowedCount() + 1);
-        memberRepository.save(member);
-        
-        Loan savedLoan = loanRepository.save(loan);
-        return convertToDTO(savedLoan);
-    }
-    
-    public LoanDTO returnLoan(Long loanId) {
-        Loan loan = loanRepository.findById(loanId)
-            .orElseThrow(() -> new ResourceNotFoundException("Loan not found"));
-        
-        if (loan.getReturnedOn() != null) {
-            throw new InvalidOperationException("Loan already returned");
-        }
-        
-        LocalDateTime returnedOn = LocalDateTime.now();
-        loan.setReturnedOn(returnedOn);
-        loan.setStatus(LoanStatus.RETURNED);
-        
-        // Check if overdue and generate fine
-        if (returnedOn.isAfter(loan.getDueOn())) {
-            long daysOverdue = ChronoUnit.DAYS.between(
-                loan.getDueOn(),
-                returnedOn
-            );
-            long fineAmountCents = daysOverdue * FINE_PER_DAY_CENTS;
-            
-            Fine fine = Fine.builder()
-                .member(loan.getMember())
-                .loan(loan)
-                .amountCents(fineAmountCents)
-                .reason("Overdue by " + daysOverdue + " days")
-                .status(FineStatus.UNPAID)
-                .build();
-            
-            fineRepository.save(fine);
-        }
-        
-        // Update book inventory
-        Book book = loan.getBook();
-        book.setAvailableCopies(book.getAvailableCopies() + 1);
-        bookRepository.save(book);
-        
-        // Update member borrowed count
-        Member member = loan.getMember();
-        member.setBorrowedCount(member.getBorrowedCount() - 1);
-        memberRepository.save(member);
-        
-        Loan returnedLoan = loanRepository.save(loan);
-        return convertToDTO(returnedLoan);
-    }
-}
-```
-
----
-
-## 10. API Endpoints Design
-
-### Book Endpoints
-```
-GET     /api/books                        - Get all books (paginated)
-GET     /api/books?title=&category=&page=
-GET     /api/books/{id}                   - Get book details
-POST    /api/books                        - Create new book
-PUT     /api/books/{id}                   - Update book
-DELETE  /api/books/{id}                   - Delete book
-GET     /api/books/search?keyword=        - Search books
-GET     /api/books/categories             - Get all categories
-```
-
-### Member Endpoints
-```
-GET     /api/members                      - Get all members (paginated)
-GET     /api/members/{id}                 - Get member details
-POST    /api/members                      - Register new member
-PUT     /api/members/{id}                 - Update member info
-DELETE  /api/members/{id}                 - Delete member
-GET     /api/members/search?name=         - Search members
-GET     /api/members/{id}/loans           - Get member's loans
-GET     /api/members/{id}/fines           - Get member's fines
-```
-
-### Loan Endpoints
-```
-GET     /api/loans                        - Get all loans
-GET     /api/loans?status=ACTIVE          - Filter loans by status
-GET     /api/loans/{id}                   - Get loan details
-POST    /api/loans/issue                  - Issue a book
-  Body: { bookId, memberId }
-PUT     /api/loans/{id}/return            - Return a book
-GET     /api/loans/member/{memberId}      - Get member's loans
-GET     /api/loans/overdue                - Get overdue loans
-```
-
-### Fine Endpoints
-```
-GET     /api/fines                        - Get all fines
-GET     /api/fines?status=UNPAID          - Filter fines
-GET     /api/fines/{id}                   - Get fine details
-PUT     /api/fines/{id}/pay               - Mark fine as paid
-GET     /api/fines/member/{memberId}      - Get member's fines
-GET     /api/fines/stats                  - Get fine statistics
-```
-
-### Report Endpoints
-```
-GET     /api/reports/dashboard            - Dashboard statistics
-GET     /api/reports/overdue-books        - Overdue items report
-GET     /api/reports/member-activity      - Member activity report
-GET     /api/reports/collection           - Fine collection report
-GET     /api/reports/inventory            - Inventory status report
-GET     /api/reports/popular-books        - Most borrowed books
-```
-
----
-
-## 11. pom.xml Dependencies
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
-        <relativePath/>
-    </parent>
-    
-    <groupId>com.library</groupId>
-    <artifactId>library-management-backend</artifactId>
-    <version>1.0.0</version>
-    <name>Library Management System</name>
-    
-    <properties>
-        <java.version>17</java.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-    
-    <dependencies>
-        <!-- Spring Boot Web -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        
-        <!-- Spring Data JPA -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        
-        <!-- MySQL Connector -->
-        <dependency>
-            <groupId>com.mysql</groupId>
-            <artifactId>mysql-connector-j</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        
-        <!-- Lombok for reducing boilerplate -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-        
-        <!-- Hibernate Validator -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-validation</artifactId>
-        </dependency>
-        
-        <!-- MapStruct for DTO conversion -->
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-            <version>1.5.5.Final</version>
-        </dependency>
-        
-        <!-- Testing -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-    
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-```
-
----
-
-## 12. application.properties Configuration
-
-```properties
-# Server Configuration
-server.port=8080
-server.servlet.context-path=/api
-
-# Database Configuration
-spring.datasource.url=jdbc:mysql://localhost:3306/library_management_db
-spring.datasource.username=root
-spring.datasource.password=your_password
-spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
-
-# JPA/Hibernate Configuration
-spring.jpa.database-platform=org.hibernate.dialect.MySQL8Dialect
-spring.jpa.hibernate.ddl-auto=validate
-spring.jpa.show-sql=false
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.properties.hibernate.use_sql_comments=true
-
-# Logging
-logging.level.root=INFO
-logging.level.com.library=DEBUG
-logging.level.org.springframework.web=DEBUG
-logging.level.org.hibernate.SQL=DEBUG
-
-# Application Name
-spring.application.name=Library Management API
-```
-
----
-
-## 13. Integration with React Frontend
-
-### CORS Configuration
-```java
-@Configuration
-public class CorsConfig {
-    @Bean
-    public WebMvcConfigurer corsConfigurer() {
-        return new WebMvcConfigurer() {
-            @Override
-            public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/api/**")
-                    .allowedOrigins("http://localhost:3000")
-                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                    .allowedHeaders("*")
-                    .allowCredentials(true)
-                    .maxAge(3600);
-            }
-        };
-    }
-}
-```
-
-### Response Format (DTO)
-```java
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class ApiResponse<T> {
-    private boolean success;
-    private String message;
-    private T data;
-    private LocalDateTime timestamp;
-    private String error;
-}
-```
-
-### BaseController Response Pattern
-```java
-@RestController
-@RequestMapping("/api/books")
-public class BookController {
-    
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<BookDTO>>> getAllBooks() {
-        return ResponseEntity.ok(
-            ApiResponse.<List<BookDTO>>builder()
-                .success(true)
-                .message("Books retrieved successfully")
-                .data(bookService.getAllBooks())
-                .timestamp(LocalDateTime.now())
-                .build()
-        );
-    }
-}
-```
-
----
-
-## 14. Documentation & Setup
-
-### Database Setup SQL
 ```sql
-CREATE DATABASE IF NOT EXISTS library_management_db;
-USE library_management_db;
-
--- Execute all CREATE TABLE scripts above
--- Then populate with sample data
-```
-
-### Backend Setup Steps
-1. Clone/Create Spring Boot project
-2. Configure MySQL database
-3. Run `mvn clean install`
-4. Configure `application.properties`
-5. Run `mvn spring-boot:run`
-6. API available at `http://localhost:8080/api`
-
-### Frontend Integration
-Update React service to call backend:
-```javascript
-// src/services/api.js
-const API_URL = 'http://localhost:8080/api';
-
-export const getBooks = async () => {
-    const response = await fetch(`${API_URL}/books`);
-    return response.json();
-};
+CREATE TABLE payment_transactions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    transaction_code VARCHAR(30) UNIQUE NOT NULL,
+    student_id BIGINT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    status ENUM('PAID','FAILED','PENDING') NOT NULL,
+    payment_method ENUM('UPI','CARD','CASH','BANK_TRANSFER') NOT NULL,
+    paid_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_payment_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    INDEX idx_payment_student (student_id),
+    INDEX idx_payment_status (status)
+);
 ```
 
 ---
 
-## 15. Key Design Decisions
+## 5. API Design
 
-| Decision | Reason |
-|----------|--------|
-| **MySQL over MongoDB** | Relational data with foreign keys and transactions needed |
-| **JPA over Raw SQL** | ORM abstraction, type safety, automatic query generation |
-| **Service Layer** | Centralized business logic, separation of concerns |
-| **DTOs for Responses** | Hide internal entity structure from clients, versioning flexibility |
-| **Amount in Cents** | Avoid floating-point precision issues in financial calculations |
-| **Denormalization (available_copies, borrowed_count)** | Performance for frequent queries, updated on transaction |
-| **Composite Indexes** | Optimize common query patterns (active loans, overdue detection) |
-| **Soft Delete NOT used** | Physical deletion sufficient for library context |
-| **Audit Timestamps** | Track creation/modification for compliance and debugging |
+Base URL: `/api`
+
+### 5.1 Auth
+
+- `POST /auth/login`
+  - Request: `{ email, password }`
+  - Response: `{ token, user: { id, name, role, ... } }`
+- `GET /auth/me`
+  - Returns profile from JWT.
+
+### 5.2 Students (Admin)
+
+- `GET /students`
+  - Filters: `search`, `gender`, `feeStatus`, `subscriptionStatus`
+- `POST /students`
+  - Enroll new student and auto-assign seat (or allocate manually).
+- `PUT /students/{id}`
+  - Update phone, section, seat, status.
+- `DELETE /students/{id}`
+  - Remove student.
+- `POST /students/{id}/payments`
+  - Mark fee as paid and create `payment_transactions` row.
+- `POST /students/{id}/check-in`
+- `POST /students/{id}/check-out`
+
+### 5.3 Seats and Capacity
+
+- `GET /seats/availability`
+  - Query: `gender`, `seatSection`
+  - Returns available/occupied seat map.
+- `POST /seats/assign`
+  - Assign a seat to student.
+
+### 5.4 Study Spaces
+
+- `GET /study-spaces`
+- `GET /study-spaces/{id}`
+- `GET /study-spaces/available?date=YYYY-MM-DD&timeSlotId=1&roomType=GROUP`
+- `GET /study-spaces/time-slots`
+
+### 5.5 Bookings
+
+- `POST /study-spaces/bookings`
+  - Request: `{ studentId, studySpaceId, timeSlotId, bookingDate, bookingType, groupSize, notes }`
+- `GET /study-spaces/members/{studentId}/bookings`
+- `PUT /study-spaces/bookings/{bookingId}/cancel`
+  - Request: `{ reason }`
+- `POST /study-spaces/bookings/{bookingId}/feedback`
+  - Request: `{ rating, cleanlinessRating, noiseLevel, comment }`
+
+### 5.6 Reports and Dashboard
+
+- `GET /dashboard/stats`
+  - Admin: active students, total students, seats, pending payments.
+  - Student: own seat details, status, subscription summary.
+- `GET /reports/study-spaces/usage`
+- `GET /reports/study-spaces/slots`
+- `GET /reports/students/attendance`
+- `GET /reports/payments/summary`
 
 ---
 
-## 16. Database Migration Strategy
+## 6. Business Rules
 
-### Migration Tools
-- **Flyway** or **Liquibase** for version control of schema changes
-- Keep migrations in `src/main/resources/db/migration/`
+1. Login required for all APIs except `/auth/login`.
+2. `ADMIN` role only for `/students/**` write operations.
+3. Student can only view/cancel own bookings.
+4. Booking cancel allowed only before configured cut-off (for example 2 hours before slot).
+5. No double booking for same space + slot + date.
+6. `GROUP` booking must satisfy `groupSize <= study_space.capacity`.
+7. Feedback allowed only for `COMPLETED` booking and only once per booking.
+8. Check-out cannot happen before check-in.
+9. Seat assignment must match student gender zone and section.
 
-### Example Flyway Migration
-```sql
--- V1__Initial_Schema.sql
-CREATE TABLE books (id BIGINT PRIMARY KEY AUTO_INCREMENT, ...);
-CREATE TABLE members (id BIGINT PRIMARY KEY AUTO_INCREMENT, ...);
--- etc
+---
+
+## 7. Suggested Spring Boot Package Structure
+
+```text
+backend/
+  src/main/java/com/geniustech/library/
+    config/
+      SecurityConfig.java
+      JwtAuthFilter.java
+      CorsConfig.java
+    controller/
+      AuthController.java
+      StudentController.java
+      StudySpaceController.java
+      BookingController.java
+      ReportController.java
+      DashboardController.java
+    service/
+      AuthService.java
+      StudentService.java
+      SeatService.java
+      StudySpaceService.java
+      BookingService.java
+      ReportService.java
+    repository/
+      UserRepository.java
+      StudentRepository.java
+      StudySpaceRepository.java
+      TimeSlotRepository.java
+      BookingRepository.java
+      FeedbackRepository.java
+      PaymentTransactionRepository.java
+    entity/
+      User.java
+      Student.java
+      StudySpace.java
+      StudySpaceFacility.java
+      TimeSlot.java
+      Booking.java
+      BookingFeedback.java
+      PaymentTransaction.java
+    dto/
+      auth/
+      student/
+      booking/
+      report/
+    exception/
+      GlobalExceptionHandler.java
+      ResourceNotFoundException.java
+      BusinessException.java
 ```
 
 ---
 
-## 17. Performance Optimization Tips
+## 8. Response Contract
 
-1. **Use FetchType.LAZY** for collections to avoid N+1 queries
-2. **Composite Indexes** on frequently filtered columns
-3. **Query Pagination** for large result sets
-4. **Cache Member Status** in Redis for frequent checks
-5. **Batch Operations** for bulk book issues/returns
-6. **Read Replicas** for analytics queries
+```json
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": {},
+  "timestamp": "2026-03-22T12:00:00Z"
+}
+```
+
+Error format:
+
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "errorCode": "VALIDATION_ERROR",
+  "details": {
+    "field": "message"
+  },
+  "timestamp": "2026-03-22T12:00:00Z"
+}
+```
 
 ---
 
-## 18. Security Considerations
+## 9. Migration Plan from Current Frontend Mock Data
 
-1. **Input Validation** - Use `@Valid` annotations on DTOs
-2. **SQL Injection Prevention** - Use named parameters with JPA
-3. **Authentication** - Integrate Spring Security with JWT tokens
-4. **Authorization** - Role-based access (Librarian, Member, Admin)
-5. **Rate Limiting** - Prevent API abuse
-6. **Audit Logging** - Track all data modifications
+1. Replace hardcoded `mockUsers` in `AuthContext` with `POST /api/auth/login`.
+2. Replace local `students` state with backend CRUD in `Students.js`.
+3. Replace mock space and slot data in `StudySpaces.js` with:
+   - `GET /api/study-spaces`
+   - `GET /api/study-spaces/time-slots`
+4. Replace booking operations in `StudySpaces.js` and `MyBookings.js` with booking APIs.
+5. Replace report mock metrics with `/api/reports/*` endpoints.
+6. Add JWT in `Authorization: Bearer <token>` for protected routes.
 
 ---
 
-## Next Steps for Implementation
+## 10. Non-Functional Requirements
 
-1. ✅ Review database schema and relationships
-2. ✅ Set up Spring Boot project with dependencies
-3. ✅ Create entities with JPA annotations
-4. ✅ Build repository interfaces with custom queries
-5. ✅ Implement service layer with business logic
-6. ✅ Create REST controllers with proper error handling
-7. ✅ Test endpoints with Postman/Insomnia
-8. ✅ Implement authentication and authorization
-9. ✅ Connect React frontend to backend APIs
-10. ✅ Deploy to production (AWS RDS + EC2/Spring Cloud)
+- Pagination support for students and bookings.
+- Audit fields on all transaction-heavy tables.
+- Soft delete optional for students/bookings if historical tracking is required.
+- Index optimization on `bookings(booking_date, status, study_space_id, time_slot_id)`.
+- Daily job to mark stale confirmed bookings as `NO_SHOW`.
 
+---
+
+## 11. Immediate Next Backend Deliverables
+
+1. Create Flyway migration `V1__initial_schema.sql` with tables above.
+2. Implement JWT auth (`/auth/login`, `/auth/me`).
+3. Implement student CRUD + payment + attendance endpoints.
+4. Implement study-space availability and booking APIs.
+5. Implement cancellation + feedback APIs with validations.
+6. Implement dashboard and report aggregate queries.
+
+---
+
+Last updated: 2026-03-22

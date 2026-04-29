@@ -1,8 +1,8 @@
-# Genius Tech Library System - Complete Documentation
+# Genius Tech Library - Complete Documentation
 
 ## 📋 Project Overview
 
-The **Genius Tech Library System** is a comprehensive, production-ready React application designed to manage all aspects of a library's operations. It provides intuitive interfaces for managing books, members, transactions, fines, and generating detailed analytics.
+The **Genius Tech Library** is a comprehensive, production-ready React application designed to manage all aspects of a library's operations. It provides intuitive interfaces for managing books, members, transactions, fines, and generating detailed analytics.
 
 ---
 
@@ -605,4 +605,4 @@ This project teaches:
 **Last Updated**: March 2026  
 **Version**: 1.0.0 - Complete
 
-Perfect! Your Genius Tech Library System is fully functional with all features implemented! 📚✨
+Perfect! Your Genius Tech Library is fully functional with all features implemented! 📚✨

@@ -1,118 +1,139 @@
-import { useMemo } from 'react';
-import { useLibrary } from '../App';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { extractStudentsFromResponse, normalizeStudent } from '../interfaces/studentResponse';
+import { getSeatsApi, getStudentsApi } from '../services/studentApi';
 import './Reports.css';
 
 export default function Reports() {
-  const { books, members, loans, fines } = useLibrary();
+  const [students, setStudents] = useState([]);
+  const [seats, setSeats] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const extractSeatsFromResponse = (response) => {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.content)) return response.data.content;
+    return [];
+  };
+
+  const fetchReportData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const [studentsResult, seatsResult] = await Promise.all([getStudentsApi(), getSeatsApi()]);
+      const studentsData = extractStudentsFromResponse(studentsResult).map(normalizeStudent);
+      const seatsData = extractSeatsFromResponse(seatsResult);
+      setStudents(studentsData);
+      setSeats(seatsData);
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load reports');
+      setStudents([]);
+      setSeats([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchReportData();
+  }, [fetchReportData]);
 
   const reports = useMemo(() => {
-    const today = new Date();
-
-    // Category distribution
-    const categoryDist = {};
-    books.forEach(book => {
-      categoryDist[book.category] = (categoryDist[book.category] || 0) + 1;
+    const seatSectionDist = {};
+    seats.forEach((seat) => {
+      const section = String(seat.section || seat.seatSection || 'REGULAR').toUpperCase();
+      const label = section === 'SILENT' ? 'Silent' : 'Regular';
+      seatSectionDist[label] = (seatSectionDist[label] || 0) + 1;
     });
 
-    // Member distribution
-    const membershipDist = {};
-    members.forEach(member => {
-      membershipDist[member.membership] = (membershipDist[member.membership] || 0) + 1;
+    const genderDist = {};
+    students.forEach((student) => {
+      genderDist[student.gender] = (genderDist[student.gender] || 0) + 1;
     });
 
-    // Overdue analysis
-    const overdueLoans = loans.filter(l => {
-      if (l.returnedOn) return false;
-      return new Date(l.dueOn) < today;
-    });
+    const inactiveStudents = students.filter((s) => s.subscriptionStatus === 'Inactive');
+    const pendingFeeStudents = students.filter((s) => s.feeStatus === 'Pending');
+    const paidFeeStudents = students.filter((s) => s.feeStatus === 'Paid');
 
-    const duesSoon = loans.filter(l => {
-      if (l.returnedOn) return false;
-      const dueDate = new Date(l.dueOn);
-      const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-      return daysUntilDue <= 7 && daysUntilDue > 0;
-    });
-
-    // Most borrowed books
-    const bookBorrowCount = {};
-    loans.forEach(loan => {
-      bookBorrowCount[loan.bookId] = (bookBorrowCount[loan.bookId] || 0) + 1;
-    });
-
-    const mostBorrowed = Object.entries(bookBorrowCount)
-      .map(([bookId, count]) => ({
-        bookId,
-        title: books.find(b => b.id === bookId)?.title,
-        count,
+    const topMonthlyFee = students
+      .filter((s) => Number(s.monthlyFee) > 0)
+      .map((s) => ({
+        studentId: s.id || s.studentId || s.userCode,
+        name: s.name,
+        seatNumber: s.seatNumber,
+        count: Number(s.monthlyFee || 0),
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Most active members
-    const memberLoans = {};
-    loans.forEach(loan => {
-      memberLoans[loan.memberId] = (memberLoans[loan.memberId] || 0) + 1;
-    });
-
-    const mostActive = Object.entries(memberLoans)
-      .map(([memberId, count]) => ({
-        memberId,
-        name: members.find(m => m.id === memberId)?.name,
-        count,
+    const recentEnrollments = students
+      .filter((s) => s.enrollmentDate)
+      .map((s) => ({
+        studentId: s.id || s.studentId || s.userCode,
+        name: s.name,
+        seatNumber: s.seatNumber,
+        count: s.enrollmentDate,
       }))
-      .sort((a, b) => b.count - a.count)
+      .sort((a, b) => new Date(b.count) - new Date(a.count))
       .slice(0, 5);
 
-    // Book availability
     const availabilityStats = {
-      lowStock: books.filter(b => b.availableCopies < 2).length,
-      outOfStock: books.filter(b => b.availableCopies === 0).length,
-      wellStocked: books.filter(b => b.availableCopies > 3).length,
+      available: seats.filter((s) => String(s.status || '').toUpperCase() === 'AVAILABLE').length,
+      occupied: seats.filter((s) => String(s.status || '').toUpperCase() === 'ALLOCATED').length,
+      blocked: seats.filter((s) => {
+        const status = String(s.status || '').toUpperCase();
+        return status === 'BLOCKED' || status === 'MAINTENANCE';
+      }).length,
     };
 
-    // Fine statistics
-    const fineStats = {
-      unpaidFines: fines.filter(f => f.status === 'Unpaid').length,
-      totalUnpaid: fines.filter(f => f.status === 'Unpaid').reduce((sum, f) => sum + f.amount, 0),
-      totalPaid: fines.filter(f => f.status === 'Paid').reduce((sum, f) => sum + f.amount, 0),
+    const feeStats = {
+      pendingCount: pendingFeeStudents.length,
+      totalPending: pendingFeeStudents.reduce((sum, s) => sum + Number(s.monthlyFee || 0), 0),
+      totalPaid: paidFeeStudents.reduce((sum, s) => sum + Number(s.monthlyFee || 0), 0),
     };
 
     return {
-      categoryDist,
-      membershipDist,
-      overdueLoans: overdueLoans.length,
-      duesSoon: duesSoon.length,
-      mostBorrowed,
-      mostActive,
+      seatSectionDist,
+      genderDist,
+      inactiveStudents: inactiveStudents.length,
+      pendingFees: pendingFeeStudents.length,
+      topMonthlyFee,
+      recentEnrollments,
       availabilityStats,
-      fineStats,
+      feeStats,
     };
-  }, [books, members, loans, fines]);
+  }, [students, seats]);
 
   return (
     <div className="reports-container">
       <section className="page-header">
         <div>
           <p className="eyebrow">Analytics & Reports</p>
-          <h1>Library Reports</h1>
+          <h1>Student & Seat Reports</h1>
           <p className="page-description">
-            Comprehensive analytics and insights into library operations and member activity.
+            Comprehensive analytics and insights into student and seat operations.
           </p>
+          {isLoading && <p className="page-description">Loading report data...</p>}
+          {loadError && (
+            <p className="page-description">
+              {loadError} <button className="btn btn-primary" onClick={fetchReportData}>Retry</button>
+            </p>
+          )}
         </div>
       </section>
 
       <section className="reports-grid">
         <article className="report-card">
-          <h3>📚 Catalog Analysis</h3>
+          <h3>Seat Distribution</h3>
           <div className="report-content">
-            <h4>Books by Category</h4>
+            <h4>Seats by Section</h4>
             <ul className="report-list">
-              {Object.entries(reports.categoryDist)
+              {Object.entries(reports.seatSectionDist)
                 .sort((a, b) => b[1] - a[1])
-                .map(([category, count]) => (
-                  <li key={category}>
-                    <span>{category}</span>
-                    <strong>{count} books</strong>
+                .map(([section, count]) => (
+                  <li key={section}>
+                    <span>{section}</span>
+                    <strong>{count} seats</strong>
                   </li>
                 ))}
             </ul>
@@ -120,16 +141,16 @@ export default function Reports() {
         </article>
 
         <article className="report-card">
-          <h3>🧑‍🤝 Member Demographics</h3>
+          <h3>Student Demographics</h3>
           <div className="report-content">
-            <h4>Members by Type</h4>
+            <h4>Students by Side</h4>
             <ul className="report-list">
-              {Object.entries(reports.membershipDist)
+              {Object.entries(reports.genderDist)
                 .sort((a, b) => b[1] - a[1])
                 .map(([type, count]) => (
                   <li key={type}>
                     <span>{type}</span>
-                    <strong>{count} members</strong>
+                    <strong>{count} students</strong>
                   </li>
                 ))}
             </ul>
@@ -137,55 +158,55 @@ export default function Reports() {
         </article>
 
         <article className="report-card highlight">
-          <h3>⚠️ Overdue Review</h3>
+          <h3>Student Status</h3>
           <div className="report-content">
             <div className="metric">
-              <span>Overdue Loans</span>
-              <strong className="danger">{reports.overdueLoans}</strong>
+              <span>Inactive Students</span>
+              <strong className="danger">{reports.inactiveStudents}</strong>
             </div>
             <div className="metric">
-              <span>Due in Next 7 Days</span>
-              <strong className="warning">{reports.duesSoon}</strong>
+              <span>Pending Fees</span>
+              <strong className="warning">{reports.pendingFees}</strong>
             </div>
             <div className="metric">
               <span>Action Required</span>
-              <strong>{reports.overdueLoans + reports.duesSoon}</strong>
+              <strong>{reports.inactiveStudents + reports.pendingFees}</strong>
             </div>
           </div>
         </article>
 
         <article className="report-card">
-          <h3>📊 Availability Status</h3>
+          <h3>📊 Seat Availability</h3>
           <div className="report-content">
             <div className="metric">
-              <span>Well Stocked (3 copies)</span>
-              <strong className="positive">{reports.availabilityStats.wellStocked}</strong>
+              <span>Available</span>
+              <strong className="positive">{reports.availabilityStats.available}</strong>
             </div>
             <div className="metric">
-              <span>Low Stock (1-3 copies)</span>
-              <strong className="warning">{reports.availabilityStats.lowStock}</strong>
+              <span>Occupied</span>
+              <strong className="warning">{reports.availabilityStats.occupied}</strong>
             </div>
             <div className="metric">
-              <span>Out of Stock</span>
-              <strong className="danger">{reports.availabilityStats.outOfStock}</strong>
+              <span>Blocked / Maintenance</span>
+              <strong className="danger">{reports.availabilityStats.blocked}</strong>
             </div>
           </div>
         </article>
 
         <article className="report-card">
-          <h3>💰 Fine Collections</h3>
+          <h3>💰 Fee Collections</h3>
           <div className="report-content">
             <div className="metric">
-              <span>Unpaid Fines</span>
-              <strong className="danger">₹{reports.fineStats.totalUnpaid}</strong>
+              <span>Pending Fees</span>
+              <strong className="danger">₹{reports.feeStats.totalPending.toLocaleString('en-IN')}</strong>
             </div>
             <div className="metric">
               <span>Paid Amount</span>
-              <strong className="positive">₹{reports.fineStats.totalPaid}</strong>
+              <strong className="positive">₹{reports.feeStats.totalPaid.toLocaleString('en-IN')}</strong>
             </div>
             <div className="metric">
               <span>Pending Count</span>
-              <strong>{reports.fineStats.unpaidFines}</strong>
+              <strong>{reports.feeStats.pendingCount}</strong>
             </div>
           </div>
         </article>
@@ -194,20 +215,20 @@ export default function Reports() {
           <h3>📈 Overall Summary</h3>
           <div className="report-content">
             <div className="metric">
-              <span>Total Books</span>
-              <strong>{books.length}</strong>
+              <span>Total Students</span>
+              <strong>{students.length}</strong>
             </div>
             <div className="metric">
-              <span>Total Members</span>
-              <strong>{members.length}</strong>
+              <span>Total Seats</span>
+              <strong>{seats.length}</strong>
             </div>
             <div className="metric">
-              <span>Total Loans</span>
-              <strong>{loans.length}</strong>
+              <span>Active Students</span>
+              <strong>{students.filter((s) => s.subscriptionStatus === 'Active').length}</strong>
             </div>
             <div className="metric">
-              <span>Active Loans</span>
-              <strong>{loans.filter(l => !l.returnedOn).length}</strong>
+              <span>Occupied Seats</span>
+              <strong>{reports.availabilityStats.occupied}</strong>
             </div>
           </div>
         </article>
@@ -215,52 +236,52 @@ export default function Reports() {
 
       <section className="reports-detailed">
         <article className="detailed-card">
-          <h3>🏆 Most Borrowed Books</h3>
+          <h3>🏆 Top Monthly Fee Students</h3>
           <table className="detailed-table">
             <thead>
               <tr>
                 <th>Rank</th>
-                <th>Book Title</th>
-                <th>Times Borrowed</th>
+                <th>Student Name</th>
+                <th>Monthly Fee</th>
               </tr>
             </thead>
             <tbody>
-              {reports.mostBorrowed.map((item, idx) => (
-                <tr key={item.bookId}>
+              {reports.topMonthlyFee.map((item, idx) => (
+                <tr key={item.studentId}>
                   <td className="rank">#{idx + 1}</td>
-                  <td>{item.title}</td>
-                  <td className="highlight-value">{item.count}</td>
+                  <td>{item.name} ({item.seatNumber || '-'})</td>
+                  <td className="highlight-value">₹{item.count.toLocaleString('en-IN')}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {reports.mostBorrowed.length === 0 && (
-            <p className="empty-msg">No borrowing data available</p>
+          {reports.topMonthlyFee.length === 0 && (
+            <p className="empty-msg">No fee data available</p>
           )}
         </article>
 
         <article className="detailed-card">
-          <h3>⭐ Most Active Members</h3>
+          <h3>Recent Enrollments</h3>
           <table className="detailed-table">
             <thead>
               <tr>
                 <th>Rank</th>
-                <th>Member Name</th>
-                <th>Books Borrowed</th>
+                <th>Student Name</th>
+                <th>Enrollment Date</th>
               </tr>
             </thead>
             <tbody>
-              {reports.mostActive.map((item, idx) => (
-                <tr key={item.memberId}>
+              {reports.recentEnrollments.map((item, idx) => (
+                <tr key={item.studentId}>
                   <td className="rank">#{idx + 1}</td>
-                  <td>{item.name}</td>
+                  <td>{item.name} ({item.seatNumber || '-'})</td>
                   <td className="highlight-value">{item.count}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {reports.mostActive.length === 0 && (
-            <p className="empty-msg">No member activity data available</p>
+          {reports.recentEnrollments.length === 0 && (
+            <p className="empty-msg">No enrollment data available</p>
           )}
         </article>
       </section>

@@ -1,96 +1,189 @@
-import { useMemo } from 'react';
-import { useLibrary } from '../App';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { extractStudentsFromResponse, normalizeStudent } from '../interfaces/studentResponse';
+import { getSeatsApi, getStudentByIdApi, getStudentsApi } from '../services/studentApi';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { books, members, loans, fines } = useLibrary();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const [students, setStudents] = useState([]);
+  const [seats, setSeats] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  const extractSeatsFromResponse = (response) => {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.content)) return response.data.content;
+    return [];
+  };
+
+  const extractSingleStudentFromResponse = (response) => {
+    if (!response) return null;
+    if (Array.isArray(response)) return response[0] || null;
+    if (response?.data && !Array.isArray(response.data)) return response.data;
+    return response;
+  };
+
+  const resolveStudentIdentifier = () => {
+    const candidates = [user?.studentId, user?.id, user?.userCode];
+    return candidates.find(value => value !== undefined && value !== null && String(value).trim() !== '');
+  };
+
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      if (isAdmin) {
+        const [studentsResult, seatsResult] = await Promise.all([getStudentsApi(), getSeatsApi()]);
+        const studentsData = extractStudentsFromResponse(studentsResult).map(normalizeStudent);
+        const seatsData = extractSeatsFromResponse(seatsResult);
+        setStudents(studentsData);
+        setSeats(seatsData);
+      } else {
+        const studentId = resolveStudentIdentifier();
+        if (!studentId) {
+          throw new Error('Unable to resolve logged-in student id');
+        }
+
+        const studentResult = await getStudentByIdApi(studentId);
+        const singleStudent = extractSingleStudentFromResponse(studentResult);
+        setStudents(singleStudent ? [normalizeStudent(singleStudent)] : []);
+        setSeats([]);
+      }
+    } catch (error) {
+      setLoadError(error.message || 'Unable to load dashboard data');
+      setStudents([]);
+      setSeats([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isAdmin, user?.studentId, user?.id, user?.userCode]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Define helper functions first
+  const memberStatus = (status) => {
+    if (status === 'Active') return 'Active ✓';
+    if (status === 'Pending') return 'Pending ⏳';
+    return 'Inactive';
+  };
+
+  const getMemberStatus = (status) => {
+    switch(status) {
+      case 'Active': return 'active';
+      case 'Pending': return 'warning';
+      default: return 'neutral';
+    }
+  };
+
+  const currentStudent = useMemo(() => {
+    return students.find(s =>
+      (user?.email && s.email === user.email) ||
+      (user?.id && String(s.id) === String(user.id)) ||
+      (user?.id && String(s.userCode) === String(user.id)) ||
+      (user?.id && String(s.studentId) === String(user.id))
+    ) || null;
+  }, [students, user]);
 
   const stats = useMemo(() => {
-    const today = new Date();
-    const overdueLoans = loans.filter(l => {
-      if (l.returnedOn) return false;
-      return new Date(l.dueOn) < today;
-    });
+    const totalSeats = seats.length;
+    const availableSeats = seats.filter(s => String(s.status || '').toUpperCase() === 'AVAILABLE').length;
 
-    const duesSoonLoans = loans.filter(l => {
-      if (l.returnedOn) return false;
-      const dueDate = new Date(l.dueOn);
-      const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-      return daysUntilDue <= 3 && daysUntilDue > 0;
-    });
+    if (isAdmin) {
+      const activeMembers = students.filter(m => m.subscriptionStatus === 'Active').length;
+      const pendingMembers = students.filter(m => m.feeStatus === 'Pending').length;
+      const totalMembers = students.length;
 
-    const totalBooks = books.reduce((sum, b) => sum + b.totalCopies, 0);
-    const availableBooks = books.reduce((sum, b) => sum + b.availableCopies, 0);
-    const activeMembers = members.filter(m => m.status === 'Active').length;
-    const unpaidFines = fines.filter(f => f.status === 'Unpaid').length;
-    const totalFines = fines.filter(f => f.status === 'Unpaid').reduce((sum, f) => sum + f.amount, 0);
+      return [
+        {
+          label: 'Active Students',
+          value: activeMembers,
+          caption: 'Currently enrolled',
+          color: 'positive',
+        },
+        {
+          label: 'Total Students',
+          value: totalMembers,
+          caption: 'All registrations',
+          color: 'primary',
+        },
+        {
+          label: 'Pending Fees',
+          value: pendingMembers,
+          caption: 'Awaiting payment',
+          color: 'warning',
+        },
+        {
+          label: 'Total Seats',
+          value: totalSeats,
+          caption: `${availableSeats} available`,
+          color: 'neutral',
+        },
+      ];
+    } else {
+      // Student view
+      const studentData = currentStudent || user;
+      return [
+        {
+          label: 'Your Seating Side',
+          value: user?.gender,
+          caption: 'Allocated side',
+          color: 'primary',
+        },
+        {
+          label: 'Seat Number',
+          value: studentData?.seatNumber || 'B-00',
+          caption: 'Your seat',
+          color: 'positive',
+        },
+        {
+          label: 'Status',
+          value: memberStatus(studentData?.subscriptionStatus || 'Active'),
+          caption: 'Current status',
+          color: 'neutral',
+        },
+        {
+          label: 'Subscription',
+          value: `₹${Number(studentData?.monthlyFee || 0).toLocaleString('en-IN')}`,
+          caption: 'Monthly fee',
+          color: 'neutral',
+        },
+      ];
+    }
+  }, [students, seats, isAdmin, user, currentStudent]);
 
-    return [
-      {
-        label: 'Total Books',
-        value: totalBooks,
-        caption: `${books.length} titles`,
-        color: 'primary',
-      },
-      {
-        label: 'Available Copies',
-        value: availableBooks,
-        caption: 'Ready to issue',
-        color: 'positive',
-      },
-      {
-        label: 'Active Members',
-        value: activeMembers,
-        caption: `of ${members.length} total`,
-        color: 'neutral',
-      },
-      {
-        label: 'Overdue Loans',
-        value: overdueLoans.length,
-        caption: 'Need follow-up',
-        color: 'danger',
-      },
-      {
-        label: 'Due Soon (3 Days)',
-        value: duesSoonLoans.length,
-        caption: 'Reminders needed',
-        color: 'warning',
-      },
-      {
-        label: 'Unpaid Fines',
-        value: `₹${totalFines}`,
-        caption: `${unpaidFines} pending`,
-        color: 'danger',
-      },
-    ];
-  }, [books, members, loans, fines]);
-
-  const recentLoans = loans
-    .filter(l => !l.returnedOn)
-    .sort((a, b) => new Date(b.issuedOn) - new Date(a.issuedOn))
-    .slice(0, 5);
-
-  const getBookTitle = (bookId) => {
-    return books.find(b => b.id === bookId)?.title || 'Unknown Book';
-  };
-
-  const getMemberName = (memberId) => {
-    return members.find(m => m.id === memberId)?.name || 'Unknown Member';
-  };
+  const activeMembersList = isAdmin
+    ? students
+        .filter(m => m.subscriptionStatus === 'Active')
+        .sort((a, b) => new Date(b.enrollmentDate || 0) - new Date(a.enrollmentDate || 0))
+        .slice(0, 2)
+    : (currentStudent ? [currentStudent] : []);
 
   return (
     <div className="dashboard-container">
       <section className="dashboard-hero">
         <div>
-          <p className="eyebrow">Library Operations</p>
-          <h1>Dashboard</h1>
+          {/* <p className="eyebrow">System Overview</p> */}
+          <h1>{`Hi, ${user?.name || 'User'}`}</h1>
           <p className="hero-copy">
-            Overview of library operations, book inventory, and member activity.
+            {isAdmin
+              ? 'Welcome back! Here’s a quick overview of the library’s current status and recent member activity.'
+              : 'View your seat information and booking details.'}
           </p>
+          {isLoading && <p className="hero-copy">Loading dashboard data...</p>}
+          {loadError && (
+            <p className="hero-copy">
+              {loadError} <button className="btn btn-primary" onClick={fetchDashboardData}>Retry</button>
+            </p>
+          )}
         </div>
       </section>
 
-      <section className="stats-grid" aria-label="Library summary">
+      <section className="stats-grid" aria-label="Study space summary">
         {stats.map((stat) => (
           <article key={stat.label} className={`stat-card stat-${stat.color}`}>
             <span className="stat-label">{stat.label}</span>
@@ -104,40 +197,29 @@ export default function Dashboard() {
         <article className="panel">
           <div className="panel-head compact">
             <div>
-              <p className="panel-label">Recent Activity</p>
-              <h2>Active Loans</h2>
+              <p className="panel-label">Recently</p>
+              <h2>{isAdmin ? 'Most Recent Enrolled Students' : 'My Information'}</h2>
             </div>
           </div>
 
           <div className="recent-loans">
-            {recentLoans.length > 0 ? (
-              recentLoans.map((loan) => {
-                const dueDate = new Date(loan.dueOn);
-                const today = new Date();
-                const daysUntilDue = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-                const isOverdue = daysUntilDue < 0;
-
-                return (
-                  <div key={loan.id} className="loan-item">
-                    <div className="loan-info">
-                      <strong>{getBookTitle(loan.bookId)}</strong>
-                      <p>{getMemberName(loan.memberId)}</p>
-                      <small>{loan.id}</small>
-                    </div>
-                    <div className="loan-status">
-                      {isOverdue ? (
-                        <span className={`badge danger`}>Overdue by {Math.abs(daysUntilDue)} days</span>
-                      ) : daysUntilDue <= 3 ? (
-                        <span className={`badge warning`}>Due in {daysUntilDue} days</span>
-                      ) : (
-                        <span className={`badge neutral`}>Due on {loan.dueOn}</span>
-                      )}
-                    </div>
+            {activeMembersList.length > 0 ? (
+              activeMembersList.map((member) => (
+                <div key={member.id} className="loan-item">
+                  <div className="loan-info">
+                    <strong>{member.name}</strong>
+                    <p>{member.email}</p>
+                    <small>{member.id || member.userCode || member.studentId}</small>
                   </div>
-                );
-              })
+                  <div className="loan-status">
+                    <span className={`badge ${getMemberStatus(member.subscriptionStatus || 'Active')}`}>
+                      {member.subscriptionStatus || 'Active'}
+                    </span>
+                  </div>
+                </div>
+              ))
             ) : (
-              <div className="empty-state">No active loans</div>
+              <div className="empty-state">No members found</div>
             )}
           </div>
         </article>
@@ -151,22 +233,45 @@ export default function Dashboard() {
           </div>
 
           <div className="quick-stats">
-            <div className="quick-stat">
-              <span>Books in Circulation</span>
-              <strong>{books.reduce((sum, b) => sum + b.totalCopies - b.availableCopies, 0)}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Total Members</span>
-              <strong>{members.length}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Total Transactions</span>
-              <strong>{loans.length}</strong>
-            </div>
-            <div className="quick-stat">
-              <span>Completed Loans</span>
-              <strong>{loans.filter(l => l.returnedOn).length}</strong>
-            </div>
+            {isAdmin ? (
+              <>
+                <div className="quick-stat">
+                  <span>Total Students</span>
+                  <strong>{students.length}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Active Students</span>
+                  <strong>{students.filter(m => m.subscriptionStatus === 'Active').length}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Total Seats</span>
+                  <strong>{seats.length}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Available Seats</span>
+                  <strong>{seats.filter(s => String(s.status || '').toUpperCase() === 'AVAILABLE').length}</strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="quick-stat">
+                  <span>Attendance Hours</span>
+                  <strong>{currentStudent?.attendanceHours || user?.attendanceHours || '0 hrs'}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Fee Status</span>
+                  <strong>{currentStudent?.feeStatus || user?.feeStatus || 'Pending'}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Status</span>
+                  <strong>{currentStudent?.checkedIn || (currentStudent?.currentCheckIn && !currentStudent?.currentCheckOut) ? 'Present' : 'Absent'}</strong>
+                </div>
+                <div className="quick-stat">
+                  <span>Enrollment Date</span>
+                  <strong>{currentStudent?.enrollmentDate || user?.enrollment || '-'}</strong>
+                </div>
+              </>
+            )}
           </div>
         </article>
       </section>
